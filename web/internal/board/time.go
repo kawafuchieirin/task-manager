@@ -1,6 +1,7 @@
 package board
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -43,9 +44,9 @@ func (c cardView) DiffText() string {
 	}
 	diff := c.ActualSec - int64(*c.EstimatedMin)*60
 	if diff > 0 {
-		return formatDuration(diff) + " 超過"
+		return formatDuration(diff) + " オーバー！"
 	}
-	return "残り " + formatDuration(-diff)
+	return "のこり " + formatDuration(-diff)
 }
 
 // timePanel は時間記録のパネルの表示内容。
@@ -69,7 +70,7 @@ func toEntryView(e taskclient.TimeEntry) entryView {
 	v := entryView{ID: e.ID, TaskID: e.TaskID, Duration: formatDuration(e.DurationSec), Running: e.EndedAt == nil}
 	switch {
 	case e.EndedAt == nil:
-		v.Range = start.Format("1/2 15:04") + " – 計測中"
+		v.Range = start.Format("1/2 15:04") + " – けいそくちゅう"
 	case e.EndedAt.In(jst).YearDay() == start.YearDay() && e.EndedAt.In(jst).Year() == start.Year():
 		v.Range = start.Format("1/2 15:04") + " – " + e.EndedAt.In(jst).Format("15:04")
 	default:
@@ -78,10 +79,10 @@ func toEntryView(e taskclient.TimeEntry) entryView {
 	return v
 }
 
-// formatDuration は秒数を「1時間5分」の形にする（分未満は切り捨て）。1分未満で記録があれば「1分未満」。
+// formatDuration は秒数を「1時間5分」の形にする（分未満は切り捨て）。1分未満で記録があれば「1分 みまん」。
 func formatDuration(sec int64) string {
 	if sec > 0 && sec < 60 {
-		return "1分未満"
+		return "1分 みまん"
 	}
 	return formatMinutes(int(sec / 60))
 }
@@ -109,10 +110,30 @@ func (h *Handler) startTimer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := h.api.StartTimer(r.Context(), id); err != nil {
+		var apiErr *taskclient.APIError
+		if errors.As(err, &apiErr) && apiErr.Code == "timer_already_running" {
+			// どのタスクのタイマーが動いているかを、画面の言葉づかいで伝える。
+			http.Error(w, h.runningElsewhereMessage(r), http.StatusConflict)
+			return
+		}
 		h.mutationError(w, r, err)
 		return
 	}
-	h.renderBoard(w, r, http.StatusOK, boardView{})
+	h.renderBoard(w, r, http.StatusOK, boardView{noticeFormat: msgTimerStarted, noticeTaskID: id})
+}
+
+// runningElsewhereMessage は、タイマーが動いているタスクの名前を入れたメッセージを返す。
+// 名前を取得できなくても（その間に止められた場合など）、名前なしの文言を返す。
+func (h *Handler) runningElsewhereMessage(r *http.Request) string {
+	tasks, err := h.api.List(r.Context())
+	if err == nil {
+		for _, t := range tasks {
+			if t.RunningSince != nil {
+				return fmt.Sprintf(msgTimerRunningElsewhere, t.Title)
+			}
+		}
+	}
+	return msgTimerRunningElsewhereUnknown
 }
 
 func (h *Handler) stopTimer(w http.ResponseWriter, r *http.Request) {
@@ -124,7 +145,7 @@ func (h *Handler) stopTimer(w http.ResponseWriter, r *http.Request) {
 		h.mutationError(w, r, err)
 		return
 	}
-	h.renderBoard(w, r, http.StatusOK, boardView{})
+	h.renderBoard(w, r, http.StatusOK, boardView{noticeFormat: msgTimerStopped, noticeTaskID: id})
 }
 
 // showTime は時間記録のパネルを開いたボードを返す。
@@ -148,7 +169,7 @@ func (h *Handler) addTime(w http.ResponseWriter, r *http.Request) {
 	if err != nil || minutes < 1 || minutes > maxManualMinutes {
 		h.renderTimePanel(w, r, http.StatusUnprocessableEntity, id, timePanel{
 			Minutes: raw,
-			Errors:  []string{fmt.Sprintf("作業時間は1〜%d分の整数で入力してください", maxManualMinutes)},
+			Errors:  []string{fieldMessage(taskclient.FieldError{Field: "minutes", Code: codeOutOfRange})},
 		})
 		return
 	}
@@ -158,7 +179,7 @@ func (h *Handler) addTime(w http.ResponseWriter, r *http.Request) {
 	if ve, ok := asValidation(err); ok {
 		panel := timePanel{Minutes: raw}
 		for _, fe := range ve.Errors {
-			panel.Errors = append(panel.Errors, fe.Message)
+			panel.Errors = append(panel.Errors, fieldMessage(fe))
 		}
 		h.renderTimePanel(w, r, http.StatusUnprocessableEntity, id, panel)
 		return

@@ -20,9 +20,9 @@ func TestCard_ShowsEstimateActualAndDiff(t *testing.T) {
 
 	body := send(t, h, http.MethodGet, "/board", nil).Body.String()
 	assertContains(t, body,
-		"目標 1時間", "実績 45分", "残り 15分",
-		"目標 30分", "実績 50分", "20分 超過",
-		"目標合計 1時間30分 ／ 実績合計 1時間35分")
+		"もくひょう 1時間", "じっせき 45分", "のこり 15分",
+		"もくひょう 30分", "じっせき 50分", "20分 オーバー！",
+		"もくひょう ごうけい 1時間30分 ／ じっせき ごうけい 1時間35分")
 	if strings.Count(body, "card__time--over") != 1 {
 		t.Error("目標を超えたタスクだけを強調するはず")
 	}
@@ -35,7 +35,7 @@ func TestTimer_StartShowsRunningAndStop(t *testing.T) {
 	rec := send(t, h, http.MethodPost, "/tasks/1/timer/start", url.Values{})
 	assertStatus(t, rec, http.StatusOK)
 	body := rec.Body.String()
-	assertContains(t, body, "card--running", "計測中", `data-elapsed="0"`, `hx-post="/tasks/1/timer/stop"`)
+	assertContains(t, body, "card--running", "けいそくちゅう", `data-elapsed="0"`, `hx-post="/tasks/1/timer/stop"`)
 	if strings.Contains(body, `hx-post="/tasks/1/timer/start"`) {
 		t.Error("計測中は開始ボタンを出さないはず")
 	}
@@ -47,7 +47,7 @@ func TestTimer_StartShowsRunningAndStop(t *testing.T) {
 	if strings.Contains(body, "card--running") {
 		t.Error("停止後は計測中の表示を消すはず")
 	}
-	assertContains(t, body, "実績 1分", `hx-post="/tasks/1/timer/start"`)
+	assertContains(t, body, "じっせき 1分", `hx-post="/tasks/1/timer/start"`)
 }
 
 func TestTimer_RunningElsewhereShowsMessage(t *testing.T) {
@@ -58,7 +58,7 @@ func TestTimer_RunningElsewhereShowsMessage(t *testing.T) {
 
 	rec := send(t, h, http.MethodPost, "/tasks/2/timer/start", url.Values{})
 	assertStatus(t, rec, http.StatusConflict)
-	assertContains(t, rec.Body.String(), "「動いているタスク」のタイマーが動いています")
+	assertContains(t, rec.Body.String(), "「動いているタスク」の タイマーが うごいている！")
 }
 
 func TestTimer_NoStartButtonForDoneTask(t *testing.T) {
@@ -86,11 +86,11 @@ func TestTimePanel_ShowAddDelete(t *testing.T) {
 
 	rec = send(t, h, http.MethodPost, "/tasks/1/time-entries", url.Values{"minutes": {"25"}})
 	assertStatus(t, rec, http.StatusOK)
-	assertContains(t, rec.Body.String(), "25分", "実績 55分", `class="time-panel"`)
+	assertContains(t, rec.Body.String(), "25分", "じっせき 55分", `class="time-panel"`)
 
 	rec = send(t, h, http.MethodDelete, "/tasks/1/time-entries/1", nil)
 	assertStatus(t, rec, http.StatusOK)
-	assertContains(t, rec.Body.String(), "実績 25分", `class="time-panel"`)
+	assertContains(t, rec.Body.String(), "じっせき 25分", `class="time-panel"`)
 	assertStatus(t, send(t, h, http.MethodDelete, "/tasks/1/time-entries/1", nil), http.StatusNotFound)
 }
 
@@ -102,7 +102,7 @@ func TestTimePanel_AddValidation(t *testing.T) {
 
 			rec := send(t, h, http.MethodPost, "/tasks/1/time-entries", url.Values{"minutes": {minutes}})
 			assertStatus(t, rec, http.StatusUnprocessableEntity)
-			assertContains(t, rec.Body.String(), "作業時間は1〜1440分の整数で入力してください", `class="time-panel"`, `aria-invalid="true"`)
+			assertContains(t, rec.Body.String(), "さぎょうじかんは 1〜1440ふん で いれてください。", `class="time-panel"`, `aria-invalid="true"`)
 			if got, _ := api.get(1); got.ActualSec != 0 {
 				t.Error("検証エラーなのに記録された")
 			}
@@ -114,11 +114,11 @@ func TestTimePanel_EmptyAndRunning(t *testing.T) {
 	h, api := newTestHandler(t)
 	api.add("t", taskclient.StatusTodo, nil)
 
-	assertContains(t, send(t, h, http.MethodGet, "/tasks/1/time", nil).Body.String(), "まだ記録がありません")
+	assertContains(t, send(t, h, http.MethodGet, "/tasks/1/time", nil).Body.String(), "まだ きろくが ない。")
 
 	assertStatus(t, send(t, h, http.MethodPost, "/tasks/1/timer/start", url.Values{}), http.StatusOK)
 	body := send(t, h, http.MethodGet, "/tasks/1/time", nil).Body.String()
-	assertContains(t, body, "– 計測中", "計測中のタイマーを取り消しますか？")
+	assertContains(t, body, "– けいそくちゅう", "けいそくちゅうの タイマーを とりけしますか？")
 }
 
 func TestTimePanel_NotFound(t *testing.T) {
@@ -129,7 +129,7 @@ func TestTimePanel_NotFound(t *testing.T) {
 }
 
 func TestFormatDuration(t *testing.T) {
-	tests := map[int64]string{0: "0分", 30: "1分未満", 59: "1分未満", 60: "1分", 3599: "59分", 3600: "1時間", 5430: "1時間30分"}
+	tests := map[int64]string{0: "0分", 30: "1分 みまん", 59: "1分 みまん", 60: "1分", 3599: "59分", 3600: "1時間", 5430: "1時間30分"}
 	for in, want := range tests {
 		if got := formatDuration(in); got != want {
 			t.Errorf("formatDuration(%d) = %q, want %q", in, got, want)

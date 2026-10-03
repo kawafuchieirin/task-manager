@@ -37,7 +37,7 @@ make start    # バックグラウンドで起動し、接続先を表示
 ブラウザで web の URL を開いてください。停止: make stop / ログ: make logs
 ```
 
-ブラウザで web の URL（既定は http://127.0.0.1:3000 ）を開くとボードが表示されます。画面はレトロ RPG 風（ドット文字・黒地に白枠のウィンドウ・▶ カーソル）です。
+ブラウザで web の URL（既定は http://127.0.0.1:3000 ）を開くとボードが表示されます。画面はレトロ RPG 風（ドット文字・黒地に白枠のウィンドウ・▶ カーソル）で、言葉づかいも合わせています（例: タスクを追加すると「＊ 「〇〇」が あらわれた！」）。画面の文言は `web/internal/board/messages.go` にまとめています。
 フォントは [DotGothic16](https://github.com/fontworks-fonts/DotGothic16)（SIL Open Font License 1.1、`web/internal/board/static/fonts/DotGothic16-OFL.txt`）を同梱しているので、オフラインでも同じ見た目になります。api が止まっている場合、画面には「API サーバーに接続できません」と表示されます。
 
 | コマンド | 内容 |
@@ -123,6 +123,7 @@ curl http://127.0.0.1:8080/api/v1/stats/summary
 - 未知のフィールドはエラー（400）、`?status=` に不正な値を渡すと 422 になります
 - `API_CORS_ORIGINS` で許可したオリジンは、CSRF 対策の信頼オリジンにもなります。信頼できるアプリだけを登録してください
 - エラーは `{"error": {"code": "...", "message": "...", "details": [...]}}` の形式です
+- 422 の `details` は `{"field": "title", "code": "required", "message": "タイトルを入力してください"}` の形で、`code` で違反の種類を判別できます（`required` / `too_long` / `invalid` / `out_of_range` / `not_after_start` / `in_future`）。`message` は普通の日本語なので、独自の文言を出したいアプリは `code` を使ってください
 
 | code | HTTP | 意味 |
 |---|---|---|

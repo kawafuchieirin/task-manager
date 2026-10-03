@@ -99,8 +99,10 @@ var (
 )
 
 // FieldError は1項目分の入力エラー。
+// Code は違反の種類（required / too_long など）。画面はこれを見て独自の文言を出す。
 type FieldError struct {
 	Field   string `json:"field"`
+	Code    string `json:"code"`
 	Message string `json:"message"`
 }
 

@@ -1,24 +1,39 @@
-// htmx のエラー応答（404 / 500 など）を画面上部に表示する。
-// 422 はボードごと差し替えてフォームにエラーを出すので、ここでは扱わない。
-document.addEventListener("htmx:responseError", (event) => {
+// メッセージウィンドウ（#flash）
+// - 操作できなかったとき: htmx のエラー応答（404 / 409 / 500 など）の本文を出す
+//   （422 はボードごと差し替えてフォームにエラーを出すので、ここでは扱わない）
+// - 操作が成功したとき: サーバーが out-of-band で #flash ごと差し替える（flash--info）
+function showFlash(text) {
   const flash = document.getElementById("flash");
   if (!flash) return;
-  const xhr = event.detail.xhr;
-  flash.textContent = xhr.responseText.trim() || `エラーが発生しました（${xhr.status}）`;
+  flash.classList.remove("flash--info");
+  flash.textContent = text;
   flash.hidden = false;
+}
+
+document.addEventListener("htmx:responseError", (event) => {
+  const xhr = event.detail.xhr;
+  showFlash(xhr.responseText.trim() || `なにか おかしな ことが おきた！（${xhr.status}）`);
 });
 
 document.addEventListener("htmx:sendError", () => {
-  const flash = document.getElementById("flash");
-  if (!flash) return;
-  flash.textContent = "画面のサーバーに接続できません。make status で web が起動しているか確認してください。";
-  flash.hidden = false;
+  showFlash("がめんの サーバーと つうしん できない！ make status で web が うごいているか たしかめてください。");
 });
 
-// 操作が成功したら古いエラー表示を消す。
-document.addEventListener("htmx:afterSwap", () => {
+// 次の操作を始めたら、前のメッセージを消す。
+document.addEventListener("htmx:beforeRequest", () => {
   const flash = document.getElementById("flash");
   if (flash) flash.hidden = true;
+});
+
+// 成功のメッセージは、操作のじゃまにならないよう少しして自動で消す（エラーはクリックするまで残す）。
+let infoTimer;
+document.addEventListener("htmx:oobAfterSwap", (event) => {
+  if (event.detail.target?.id !== "flash") return;
+  clearTimeout(infoTimer);
+  infoTimer = setTimeout(() => {
+    const flash = document.getElementById("flash");
+    if (flash?.classList.contains("flash--info")) flash.hidden = true;
+  }, 4000);
 });
 
 // 計測中タイマーの経過時間を進める。

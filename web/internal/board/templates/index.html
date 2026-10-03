@@ -15,12 +15,12 @@
   <header class="page-header">
     <h1>タスクボード</h1>
   </header>
-  <div id="flash" class="flash" role="alert" title="クリックで閉じる" hidden></div>
+  <div id="flash" class="flash" role="alert" title="クリックで とじる" hidden></div>
   <main>
     {{if .LoadError -}}
     <section class="load-error" role="alert">
       <p>{{.LoadError}}</p>
-      <a class="button" href="/">再読み込み</a>
+      <a class="button" href="/">もういちど</a>
     </section>
     {{- else -}}
     {{template "board" .}}
