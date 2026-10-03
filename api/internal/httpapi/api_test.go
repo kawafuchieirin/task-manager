@@ -97,12 +97,13 @@ func TestCreateTask_JSONShape(t *testing.T) {
 
 	// 他のアプリが依存する公開フォーマットなので、キー名と null の出し方を固定する。
 	raw := decode[map[string]any](t, rec)
-	for _, key := range []string{"id", "title", "description", "status", "estimated_min", "completed_at", "created_at", "updated_at"} {
+	for _, key := range []string{"id", "title", "description", "status", "estimated_min", "completed_at", "created_at", "updated_at",
+		"actual_sec", "running_since"} {
 		if _, ok := raw[key]; !ok {
 			t.Errorf("キー %q がない: %v", key, raw)
 		}
 	}
-	if raw["estimated_min"] != nil || raw["completed_at"] != nil {
+	if raw["estimated_min"] != nil || raw["completed_at"] != nil || raw["running_since"] != nil || raw["actual_sec"] != float64(0) {
 		t.Errorf("未設定の値は null で返すはず: %v", raw)
 	}
 	if s, _ := raw["created_at"].(string); !strings.HasSuffix(s, "Z") {
@@ -256,7 +257,7 @@ func TestSummary(t *testing.T) {
 	rec := do(t, h, http.MethodGet, "/api/v1/stats/summary", "")
 	assertStatus(t, rec, http.StatusOK)
 	got := decode[summaryResponse](t, rec)
-	if got != (summaryResponse{Total: 3, Done: 1, ProgressPercent: 33}) {
+	if got != (summaryResponse{Total: 3, Done: 1, ProgressPercent: 33, EstimatedMin: 0, ActualSec: 0}) {
 		t.Errorf("summary = %+v", got)
 	}
 }

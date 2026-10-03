@@ -18,6 +18,8 @@ type taskResponse struct {
 	CompletedAt  *time.Time  `json:"completed_at"`
 	CreatedAt    time.Time   `json:"created_at"`
 	UpdatedAt    time.Time   `json:"updated_at"`
+	ActualSec    int64       `json:"actual_sec"`
+	RunningSince *time.Time  `json:"running_since"`
 }
 
 func toTaskResponse(t task.Task) taskResponse {
@@ -30,6 +32,8 @@ func toTaskResponse(t task.Task) taskResponse {
 		CompletedAt:  t.CompletedAt,
 		CreatedAt:    t.CreatedAt,
 		UpdatedAt:    t.UpdatedAt,
+		ActualSec:    t.ActualSec,
+		RunningSince: t.RunningSince,
 	}
 }
 
@@ -48,9 +52,11 @@ type updateTaskRequest struct {
 }
 
 type summaryResponse struct {
-	Total           int `json:"total"`
-	Done            int `json:"done"`
-	ProgressPercent int `json:"progress_percent"`
+	Total           int   `json:"total"`
+	Done            int   `json:"done"`
+	ProgressPercent int   `json:"progress_percent"`
+	EstimatedMin    int   `json:"estimated_min"`
+	ActualSec       int64 `json:"actual_sec"`
 }
 
 type taskHandler struct {
@@ -152,6 +158,8 @@ func (h *taskHandler) summary(w http.ResponseWriter, r *http.Request) {
 		Total:           sum.Total,
 		Done:            sum.Done,
 		ProgressPercent: sum.ProgressPercent(),
+		EstimatedMin:    sum.EstimatedMin,
+		ActualSec:       sum.ActualSec,
 	})
 }
 

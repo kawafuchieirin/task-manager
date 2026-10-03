@@ -49,6 +49,10 @@ type Task struct {
 	CompletedAt  *time.Time
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
+	// ActualSec は記録した全区間の合計（秒）。計測中の区間は取得時点までを含める。
+	ActualSec int64
+	// RunningSince は計測中のタイマーの開始時刻。タイマーが動いていなければ nil。
+	RunningSince *time.Time
 }
 
 // ErrNotFound は指定した ID のタスクが存在しないことを表す。

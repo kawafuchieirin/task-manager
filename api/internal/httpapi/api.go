@@ -25,12 +25,23 @@ func NewHandler(svc *task.Service, logger *slog.Logger, opts Options) http.Handl
 	mux.HandleFunc("PATCH /api/v1/tasks/{id}", h.update)
 	mux.HandleFunc("DELETE /api/v1/tasks/{id}", h.delete)
 	mux.HandleFunc("GET /api/v1/stats/summary", h.summary)
+	mux.HandleFunc("POST /api/v1/tasks/{id}/timer/start", h.startTimer)
+	mux.HandleFunc("POST /api/v1/tasks/{id}/timer/stop", h.stopTimer)
+	mux.HandleFunc("GET /api/v1/tasks/{id}/time-entries", h.listEntries)
+	mux.HandleFunc("POST /api/v1/tasks/{id}/time-entries", h.addEntry)
+	mux.HandleFunc("GET /api/v1/time-entries/{id}", h.getEntry)
+	mux.HandleFunc("PATCH /api/v1/time-entries/{id}", h.updateEntry)
+	mux.HandleFunc("DELETE /api/v1/time-entries/{id}", h.deleteEntry)
 
 	// ServeMux 既定の 404 / 405 は平文なので、エラー形式を揃えるため JSON で返す。
 	// メソッド付きのパターンが優先されるため、以下はメソッドが合わないときだけ呼ばれる。
 	mux.Handle("/api/v1/tasks", methodNotAllowed(http.MethodGet, http.MethodPost))
 	mux.Handle("/api/v1/tasks/{id}", methodNotAllowed(http.MethodGet, http.MethodPatch, http.MethodDelete))
 	mux.Handle("/api/v1/stats/summary", methodNotAllowed(http.MethodGet))
+	mux.Handle("/api/v1/tasks/{id}/timer/start", methodNotAllowed(http.MethodPost))
+	mux.Handle("/api/v1/tasks/{id}/timer/stop", methodNotAllowed(http.MethodPost))
+	mux.Handle("/api/v1/tasks/{id}/time-entries", methodNotAllowed(http.MethodGet, http.MethodPost))
+	mux.Handle("/api/v1/time-entries/{id}", methodNotAllowed(http.MethodGet, http.MethodPatch, http.MethodDelete))
 	mux.HandleFunc("/api/v1/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, codeNotFound, "API のパスが存在しません", nil)
 	})
