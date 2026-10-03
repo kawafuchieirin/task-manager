@@ -154,12 +154,12 @@ func TestCreateTask_ValidationDetails(t *testing.T) {
 	rec := do(t, h, http.MethodPost, "/api/v1/tasks", `{"title":"","estimated_min":-1}`)
 	detail := assertErrorCode(t, rec, http.StatusUnprocessableEntity, codeValidationFailed)
 
-	fields := map[string]bool{}
+	codes := map[string]string{}
 	for _, d := range detail.Details {
-		fields[d.Field] = true
+		codes[d.Field] = d.Code
 	}
-	if !fields["title"] || !fields["estimated_min"] {
-		t.Errorf("details に title と estimated_min が含まれるはず: %+v", detail.Details)
+	if codes["title"] != "required" || codes["estimated_min"] != "out_of_range" {
+		t.Errorf("details に項目ごとのコードが含まれるはず: %+v", detail.Details)
 	}
 }
 

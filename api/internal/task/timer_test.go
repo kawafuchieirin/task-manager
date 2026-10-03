@@ -193,13 +193,14 @@ func TestAddTimeEntry_Validation(t *testing.T) {
 		name  string
 		in    EntryInput
 		field string
+		code  string
 	}{
-		{"開始なし", EntryInput{EndedAt: base}, "started_at"},
-		{"終了なし", EntryInput{StartedAt: base.Add(-time.Hour)}, "ended_at"},
-		{"終了が開始より前", EntryInput{StartedAt: base.Add(-time.Hour), EndedAt: base.Add(-2 * time.Hour)}, "ended_at"},
-		{"長さ0", EntryInput{StartedAt: base.Add(-time.Hour), EndedAt: base.Add(-time.Hour)}, "ended_at"},
-		{"24時間超", EntryInput{StartedAt: base.Add(-25 * time.Hour), EndedAt: base}, "ended_at"},
-		{"未来", EntryInput{StartedAt: base, EndedAt: base.Add(time.Minute)}, "ended_at"},
+		{"開始なし", EntryInput{EndedAt: base}, "started_at", CodeRequired},
+		{"終了なし", EntryInput{StartedAt: base.Add(-time.Hour)}, "ended_at", CodeRequired},
+		{"終了が開始より前", EntryInput{StartedAt: base.Add(-time.Hour), EndedAt: base.Add(-2 * time.Hour)}, "ended_at", CodeNotAfterStart},
+		{"長さ0", EntryInput{StartedAt: base.Add(-time.Hour), EndedAt: base.Add(-time.Hour)}, "ended_at", CodeNotAfterStart},
+		{"24時間超", EntryInput{StartedAt: base.Add(-25 * time.Hour), EndedAt: base}, "ended_at", CodeTooLong},
+		{"未来", EntryInput{StartedAt: base, EndedAt: base.Add(time.Minute)}, "ended_at", CodeInFuture},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -207,6 +208,7 @@ func TestAddTimeEntry_Validation(t *testing.T) {
 			created := mustCreate(t, svc, CreateInput{Title: "t"})
 			_, err := svc.AddTimeEntry(context.Background(), created.ID, tt.in)
 			assertValidation(t, err, tt.field)
+			assertCode(t, err, tt.field, tt.code)
 		})
 	}
 }

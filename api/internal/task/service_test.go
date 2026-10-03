@@ -44,6 +44,25 @@ func assertValidation(t *testing.T, err error, field string) {
 	if ve.Message(field) == "" {
 		t.Errorf("項目 %s のエラーを期待したが %+v", field, ve.Errors)
 	}
+	for _, fe := range ve.Errors {
+		if fe.Code == "" {
+			t.Errorf("項目 %s のエラーにコードが無い: %+v", fe.Field, fe)
+		}
+	}
+}
+
+func assertCode(t *testing.T, err error, field, code string) {
+	t.Helper()
+	var ve *ValidationError
+	if !errors.As(err, &ve) {
+		t.Fatalf("ValidationError を期待したが %v", err)
+	}
+	for _, fe := range ve.Errors {
+		if fe.Field == field && fe.Code == code {
+			return
+		}
+	}
+	t.Errorf("項目 %s のコード %s を期待したが %+v", field, code, ve.Errors)
 }
 
 func TestCreate(t *testing.T) {
@@ -84,20 +103,22 @@ func TestCreate_Validation(t *testing.T) {
 		name  string
 		in    CreateInput
 		field string
+		code  string
 	}{
-		{"タイトルが空", CreateInput{Title: ""}, "title"},
-		{"タイトルが空白のみ", CreateInput{Title: "   "}, "title"},
-		{"タイトルが101文字", CreateInput{Title: strings.Repeat("あ", 101)}, "title"},
-		{"説明が2001文字", CreateInput{Title: "t", Description: strings.Repeat("a", 2001)}, "description"},
-		{"不正なステータス", CreateInput{Title: "t", Status: "archived"}, "status"},
-		{"目標時間が負", CreateInput{Title: "t", EstimatedMin: ptr(-1)}, "estimated_min"},
-		{"目標時間が上限超過", CreateInput{Title: "t", EstimatedMin: ptr(MaxEstimatedMin + 1)}, "estimated_min"},
+		{"タイトルが空", CreateInput{Title: ""}, "title", CodeRequired},
+		{"タイトルが空白のみ", CreateInput{Title: "   "}, "title", CodeRequired},
+		{"タイトルが101文字", CreateInput{Title: strings.Repeat("あ", 101)}, "title", CodeTooLong},
+		{"説明が2001文字", CreateInput{Title: "t", Description: strings.Repeat("a", 2001)}, "description", CodeTooLong},
+		{"不正なステータス", CreateInput{Title: "t", Status: "archived"}, "status", CodeInvalid},
+		{"目標時間が負", CreateInput{Title: "t", EstimatedMin: ptr(-1)}, "estimated_min", CodeOutOfRange},
+		{"目標時間が上限超過", CreateInput{Title: "t", EstimatedMin: ptr(MaxEstimatedMin + 1)}, "estimated_min", CodeOutOfRange},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			svc, _ := newTestService(t)
 			_, err := svc.Create(context.Background(), tt.in)
 			assertValidation(t, err, tt.field)
+			assertCode(t, err, tt.field, tt.code)
 		})
 	}
 }

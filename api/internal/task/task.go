@@ -59,10 +59,23 @@ type Task struct {
 var ErrNotFound = errors.New("タスクが見つかりません")
 
 // FieldError は1項目分の入力エラー。
+// Code は機械的に判別できる違反の種類で、他のアプリが独自の文言を出すときに使う。
+// Message は人が読むための説明。一度公開した Code は変更しない。
 type FieldError struct {
 	Field   string `json:"field"`
+	Code    string `json:"code"`
 	Message string `json:"message"`
 }
+
+// 入力エラーの種類（FieldError.Code）。
+const (
+	CodeRequired      = "required"        // 未入力
+	CodeTooLong       = "too_long"        // 文字数・区間の長さが上限を超えた
+	CodeInvalid       = "invalid"         // 決められた値以外
+	CodeOutOfRange    = "out_of_range"    // 数値が範囲外
+	CodeNotAfterStart = "not_after_start" // 終了が開始より後でない
+	CodeInFuture      = "in_future"       // 未来の時刻
+)
 
 // ValidationError は入力値の検証エラー。複数項目のエラーをまとめて返す。
 type ValidationError struct {
@@ -89,8 +102,8 @@ func (e *ValidationError) Message(field string) string {
 
 type validator struct{ errs []FieldError }
 
-func (v *validator) add(field, msg string) {
-	v.errs = append(v.errs, FieldError{Field: field, Message: msg})
+func (v *validator) add(field, code, msg string) {
+	v.errs = append(v.errs, FieldError{Field: field, Code: code, Message: msg})
 }
 
 func (v *validator) err() error {
@@ -103,26 +116,26 @@ func (v *validator) err() error {
 func (v *validator) title(title string) {
 	switch n := utf8.RuneCountInString(title); {
 	case n == 0:
-		v.add("title", "タイトルを入力してください")
+		v.add("title", CodeRequired, "タイトルを入力してください")
 	case n > MaxTitleLen:
-		v.add("title", fmt.Sprintf("タイトルは%d文字以内で入力してください", MaxTitleLen))
+		v.add("title", CodeTooLong, fmt.Sprintf("タイトルは%d文字以内で入力してください", MaxTitleLen))
 	}
 }
 
 func (v *validator) description(desc string) {
 	if utf8.RuneCountInString(desc) > MaxDescriptionLen {
-		v.add("description", fmt.Sprintf("説明は%d文字以内で入力してください", MaxDescriptionLen))
+		v.add("description", CodeTooLong, fmt.Sprintf("説明は%d文字以内で入力してください", MaxDescriptionLen))
 	}
 }
 
 func (v *validator) status(s Status) {
 	if !s.Valid() {
-		v.add("status", "ステータスは todo / doing / done のいずれかを指定してください")
+		v.add("status", CodeInvalid, "ステータスは todo / doing / done のいずれかを指定してください")
 	}
 }
 
 func (v *validator) estimatedMin(m *int) {
 	if m != nil && (*m < 0 || *m > MaxEstimatedMin) {
-		v.add("estimated_min", fmt.Sprintf("目標時間は0〜%d分で指定してください", MaxEstimatedMin))
+		v.add("estimated_min", CodeOutOfRange, fmt.Sprintf("目標時間は0〜%d分で指定してください", MaxEstimatedMin))
 	}
 }
