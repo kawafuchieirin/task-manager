@@ -2,10 +2,22 @@
 
 自分専用の学習・作業タスク管理アプリ。要件は [SPEC.md](SPEC.md) を参照。
 
-| サービス | 役割 | 既定アドレス |
-|---|---|---|
-| `taskboard` | 画面と Task API（SQLite に保存） | http://127.0.0.1:8080 |
-| `insight` | 振り返りから「学んだこと / できなかったこと」を抽出する API | http://127.0.0.1:8081 |
+画面アプリと API は別々のプロセスです。DB を持つのは `api` だけで、`web` も「API を使う他のアプリ」の1つとして HTTP で API を呼び出します。
+
+```
+ブラウザ ──HTML──▶ web (:3000) ──HTTP/JSON──▶ api (:8080) ──▶ SQLite
+                                                ▲
+                       他のアプリ ──HTTP/JSON────┘
+                                         insight (:8081)  抽出 API（DB なし）
+```
+
+| サービス | ディレクトリ | 役割 | 既定アドレス |
+|---|---|---|---|
+| `api` | `api/` | Task API（`/api/v1`）。SQLite に保存 | http://127.0.0.1:8080 |
+| `web` | `web/` | タスクボードの画面（htmx）。DB を持たず api を呼ぶ | http://127.0.0.1:3000 |
+| `insight` | `insight/` | 振り返りから「学んだこと / できなかったこと」を抽出する API | http://127.0.0.1:8081 |
+
+各ディレクトリは独立した Go モジュールで、`go.work` でまとめています。3つのサービスが共通で使う HTTP サーバーの起動処理や防御ミドルウェアは `shared/` にあります。
 
 ## セットアップ
 
@@ -18,13 +30,14 @@ make start    # バックグラウンドで起動し、接続先を表示
 ```
 
 ```text
-● taskboard  起動中  http://127.0.0.1:8080  (PID 12345)
+● api        起動中  http://127.0.0.1:8080  (PID 12345)
 ● insight    起動中  http://127.0.0.1:8081  (PID 12346)
+● web        起動中  http://127.0.0.1:3000  (PID 12347)
 
-停止: make stop / ログ: make logs
+ブラウザで web の URL を開いてください。停止: make stop / ログ: make logs
 ```
 
-ブラウザで taskboard の URL（既定は http://127.0.0.1:8080 ）を開くとボードが表示されます。
+ブラウザで web の URL（既定は http://127.0.0.1:3000 ）を開くとボードが表示されます。api が止まっている場合、画面には「API サーバーに接続できません」と表示されます。
 
 | コマンド | 内容 |
 |---|---|
@@ -36,7 +49,8 @@ make start    # バックグラウンドで起動し、接続先を表示
 
 - PID とログは `.run/` に保存されます。ログは起動のたびに作り直されます
 - ポートが使用中などで起動できなかった場合は、ログの末尾を表示し、起動途中のサービスも止めます
-- 表示される接続先は、サーバーが実際に待ち受けているアドレスです（`TASKBOARD_ADDR` / `INSIGHT_ADDR` の設定が反映されます）
+- 表示される接続先は、サーバーが実際に待ち受けているアドレスです（`API_ADDR` / `WEB_ADDR` / `INSIGHT_ADDR` の設定が反映されます）
+- 起動は api → insight → web の順、停止はその逆順です
 
 DB は初回起動時に `data/taskboard.db` に作成され、マイグレーションが自動で適用されます。
 
@@ -44,17 +58,22 @@ DB は初回起動時に `data/taskboard.db` に作成され、マイグレー�
 
 すべて任意です。変更する場合は `.env.example` を `.env` にコピーして編集すると、mise が自動で読み込みます。
 
+待ち受けアドレスはすべてループバック（`127.0.0.1` / `::1` / `localhost`）のみです。`0.0.0.0` などを指定すると起動エラーになります。
+
 | 環境変数 | 既定値 | 説明 |
 |---|---|---|
-| `TASKBOARD_ADDR` | `127.0.0.1:8080` | taskboard の待ち受けアドレス（ループバックのみ。`0.0.0.0` などは起動エラー） |
-| `TASKBOARD_DB_PATH` | `data/taskboard.db` | SQLite ファイルのパス |
-| `TASKBOARD_API_KEY` | （なし） | 設定すると `/api/v1` に `Authorization: Bearer <キー>` を要求する（16文字以上） |
-| `TASKBOARD_CORS_ORIGINS` | （なし） | ブラウザから API を呼ぶ他のアプリのオリジン（カンマ区切り。例: `http://localhost:3000`） |
-| `INSIGHT_ADDR` | `127.0.0.1:8081` | insight の待ち受けアドレス（ループバックのみ） |
+| `API_ADDR` | `127.0.0.1:8080` | api の待ち受けアドレス |
+| `API_DB_PATH` | `data/taskboard.db` | SQLite ファイルのパス |
+| `API_KEY` | （なし） | 設定すると `/api/v1` に `Authorization: Bearer <キー>` を要求する（16文字以上） |
+| `API_CORS_ORIGINS` | （なし） | ブラウザから API を直接呼ぶ他のアプリのオリジン（カンマ区切り。例: `http://localhost:5173`）。web はサーバー間で呼ぶので登録不要 |
+| `WEB_ADDR` | `127.0.0.1:3000` | web の待ち受けアドレス |
+| `WEB_API_URL` | `http://127.0.0.1:8080` | web が呼び出す api の URL |
+| `WEB_API_KEY` | （なし） | `API_KEY` を設定した場合に同じ値を指定する |
+| `INSIGHT_ADDR` | `127.0.0.1:8081` | insight の待ち受けアドレス |
 
 ## 他のアプリから API を使う
 
-画面と同じデータを JSON の REST API（`/api/v1`）で操作できます。
+画面（web）と同じデータを JSON の REST API（`/api/v1`）で操作できます。web 自身もこの API だけを使って動いています。
 
 ```sh
 # 作成（201 と Location ヘッダーを返す）
@@ -85,7 +104,7 @@ curl http://127.0.0.1:8080/api/v1/stats/summary   # {"total":1,"done":1,"progres
   - `"estimated_min": null` を送ると目標時間を未設定に戻せます
   - それ以外の項目（`title` / `description` / `status`）の `null` は「変更しない」として扱います
 - 未知のフィールドはエラー（400）、`?status=` に不正な値を渡すと 422 になります
-- `TASKBOARD_CORS_ORIGINS` で許可したオリジンは、CSRF 対策の信頼オリジンにもなります（画面のフォーム送信も受け付けます）。信頼できるアプリだけを登録してください
+- `API_CORS_ORIGINS` で許可したオリジンは、CSRF 対策の信頼オリジンにもなります。信頼できるアプリだけを登録してください
 - エラーは `{"error": {"code": "...", "message": "...", "details": [...]}}` の形式です
 
 | code | HTTP | 意味 |
@@ -103,7 +122,7 @@ API の手前の防御で拒否された場合は、JSON ではなく平文で�
 
 | HTTP | 原因 |
 |---|---|
-| 403 | 他サイトのブラウザからの送信（CSRF 対策）。`TASKBOARD_CORS_ORIGINS` に登録すると許可される |
+| 403 | 他サイトのブラウザからの送信（CSRF 対策）。`API_CORS_ORIGINS` に登録すると許可される |
 | 421 | `Host` ヘッダーが `localhost` / `127.0.0.1` / `::1` 以外（DNS リバインディング対策） |
 
 ## 開発コマンド
@@ -112,7 +131,19 @@ API の手前の防御で拒否された場合は、JSON ではなく平文で�
 
 | コマンド | 内容 |
 |---|---|
-| `make build` | `bin/` にビルド |
-| `make test` | 全テスト（`-race` 付き） |
-| `make lint` | golangci-lint と shellcheck |
+| `make build` | `bin/` にビルド（api / web / insight） |
+| `make test` | 全モジュールのテスト（`-race` 付き） |
+| `make lint` | golangci-lint（モジュールごと）と shellcheck |
 | `make fmt` | コード整形 |
+| `make tidy` | 各モジュールの `go.mod` / `go.sum` を整理 |
+
+```
+.
+├── api/        Task API（cmd/api、internal/{config,db,task,httpapi}）
+├── web/        画面アプリ（cmd/web、internal/{config,taskclient,board}）
+├── insight/    抽出 API（cmd/insight、internal/config）
+├── shared/     共通部品（httpserver: 起動・/healthz・Host 検証・防御ヘッダー、envconf: 設定の共通処理）
+├── scripts/    バックグラウンド起動・停止（service.sh）
+├── go.work
+└── Makefile
+```
