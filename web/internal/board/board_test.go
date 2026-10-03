@@ -300,7 +300,8 @@ func TestDoneColumnOrder(t *testing.T) {
 
 func TestStatic(t *testing.T) {
 	h, _ := newTestHandler(t)
-	for _, path := range []string{"/static/htmx.min.js", "/static/app.js", "/static/app.css"} {
+	for _, path := range []string{"/static/htmx.min.js", "/static/app.js", "/static/app.css",
+		"/static/fonts/DotGothic16-Regular.ttf", "/static/fonts/DotGothic16-OFL.txt"} {
 		rec := send(t, h, http.MethodGet, path, nil)
 		assertStatus(t, rec, http.StatusOK)
 		if rec.Body.Len() == 0 {

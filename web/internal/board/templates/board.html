@@ -73,9 +73,9 @@
   {{- end}}
   <div class="card__actions">
     {{if .Running -}}
-    <button type="button" class="button button--timer-stop" hx-post="/tasks/{{.ID}}/timer/stop">■ 停止</button>
+    <button type="button" class="button button--timer-stop" hx-post="/tasks/{{.ID}}/timer/stop">停止</button>
     {{- else if .CanStartTimer -}}
-    <button type="button" class="button button--timer" hx-post="/tasks/{{.ID}}/timer/start">▶ 開始</button>
+    <button type="button" class="button button--timer" hx-post="/tasks/{{.ID}}/timer/start">開始</button>
     {{- end}}
     {{range actions .Status -}}
     <button type="button" class="button" hx-post="/tasks/{{$.ID}}/status" hx-vals='{"status": "{{.To}}"}'>{{.Label}}</button>
