@@ -1,0 +1,103 @@
+{{define "board" -}}
+<section id="board" class="board" hx-target="this" hx-swap="outerHTML">
+  <div class="progress">
+    <div class="progress__label">
+      <span>進捗</span>
+      <span><strong>{{.Percent}}%</strong>（{{.Done}} / {{.Total}} 件完了）</span>
+    </div>
+    <div class="progress__track" role="progressbar" aria-label="完了したタスクの割合"
+         aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{.Percent}}">
+      <div class="progress__fill" style="width: {{.Percent}}%"></div>
+    </div>
+  </div>
+
+  {{with .NewForm -}}
+  <form class="new-task" hx-post="/tasks">
+    <div class="field field--grow">
+      <label for="new-title">タイトル</label>
+      <input id="new-title" name="title" value="{{.Title}}" maxlength="100" required autocomplete="off"
+             {{with .Error "title"}}aria-invalid="true" aria-describedby="new-title-error"{{end}}>
+      {{with .Error "title"}}<p id="new-title-error" class="field__error">{{.}}</p>{{end}}
+    </div>
+    <div class="field field--narrow">
+      <label for="new-estimated">目標（分）</label>
+      <input id="new-estimated" name="estimated_min" value="{{.EstimatedMin}}" inputmode="numeric" type="number" min="0"
+             {{with .Error "estimated_min"}}aria-invalid="true" aria-describedby="new-estimated-error"{{end}}>
+      {{with .Error "estimated_min"}}<p id="new-estimated-error" class="field__error">{{.}}</p>{{end}}
+    </div>
+    <div class="field field--full">
+      <label for="new-description">説明（任意）</label>
+      <textarea id="new-description" name="description" rows="2" maxlength="2000"
+                {{with .Error "description"}}aria-invalid="true"{{end}}>{{.Description}}</textarea>
+      {{with .Error "description"}}<p class="field__error">{{.}}</p>{{end}}
+    </div>
+    <button type="submit" class="button button--primary">追加</button>
+  </form>
+  {{- end}}
+
+  <div class="columns">
+    {{range .Columns -}}
+    <section class="column column--{{.Status}}" aria-labelledby="column-{{.Status}}">
+      <h2 id="column-{{.Status}}" class="column__title">{{.Label}} <span class="column__count">{{len .Tasks}}</span></h2>
+      <ul class="cards">
+        {{range .Tasks -}}
+          {{if eq .ID $.EditingID}}{{template "edit-card" $.Edit}}{{else}}{{template "card" .}}{{end}}
+        {{- else -}}
+        <li class="cards__empty">タスクはありません</li>
+        {{- end}}
+      </ul>
+    </section>
+    {{- end}}
+  </div>
+</section>
+{{- end}}
+
+{{define "card" -}}
+<li class="card card--{{.Status}}" id="task-{{.ID}}">
+  <p class="card__title">{{.Title}}</p>
+  {{with .Description}}<p class="card__description">{{.}}</p>{{end}}
+  {{if or .EstimatedMin .CompletedAt -}}
+  <p class="card__meta">
+    {{with .EstimatedMin}}<span>目標 {{minutes .}}</span>{{end}}
+    {{with .CompletedAt}}<span>完了 {{jst .}}</span>{{end}}
+  </p>
+  {{- end}}
+  <div class="card__actions">
+    {{range actions .Status -}}
+    <button type="button" class="button" hx-post="/tasks/{{$.ID}}/status" hx-vals='{"status": "{{.To}}"}'>{{.Label}}</button>
+    {{- end}}
+    <button type="button" class="button button--ghost" hx-get="/tasks/{{.ID}}/edit">編集</button>
+    <button type="button" class="button button--danger" hx-delete="/tasks/{{.ID}}"
+            hx-confirm="「{{.Title}}」を削除しますか？">削除</button>
+  </div>
+</li>
+{{- end}}
+
+{{define "edit-card" -}}
+<li class="card card--editing" id="task-{{.ID}}">
+  <form class="edit-task" hx-put="/tasks/{{.ID}}">
+    <div class="field">
+      <label for="edit-title-{{.ID}}">タイトル</label>
+      <input id="edit-title-{{.ID}}" name="title" value="{{.Title}}" maxlength="100" required autocomplete="off"
+             {{with .Error "title"}}aria-invalid="true"{{end}}>
+      {{with .Error "title"}}<p class="field__error">{{.}}</p>{{end}}
+    </div>
+    <div class="field">
+      <label for="edit-estimated-{{.ID}}">目標（分）</label>
+      <input id="edit-estimated-{{.ID}}" name="estimated_min" value="{{.EstimatedMin}}" inputmode="numeric" type="number" min="0"
+             {{with .Error "estimated_min"}}aria-invalid="true"{{end}}>
+      {{with .Error "estimated_min"}}<p class="field__error">{{.}}</p>{{end}}
+    </div>
+    <div class="field">
+      <label for="edit-description-{{.ID}}">説明</label>
+      <textarea id="edit-description-{{.ID}}" name="description" rows="3" maxlength="2000"
+                {{with .Error "description"}}aria-invalid="true"{{end}}>{{.Description}}</textarea>
+      {{with .Error "description"}}<p class="field__error">{{.}}</p>{{end}}
+    </div>
+    <div class="card__actions">
+      <button type="submit" class="button button--primary">保存</button>
+      <button type="button" class="button button--ghost" hx-get="/board">キャンセル</button>
+    </div>
+  </form>
+</li>
+{{- end}}

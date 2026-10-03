@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 func envFrom(m map[string]string) Getenv {
 	return func(key string) string { return m[key] }
@@ -23,6 +26,21 @@ func TestLoadTaskboard(t *testing.T) {
 			env:  map[string]string{"TASKBOARD_ADDR": "127.0.0.1:9000", "TASKBOARD_DB_PATH": "/tmp/x.db"},
 			want: Taskboard{Addr: "127.0.0.1:9000", DBPath: "/tmp/x.db"},
 		},
+		{
+			name: "IPv6 ループバックと localhost は許可",
+			env:  map[string]string{"TASKBOARD_ADDR": "[::1]:8080"},
+			want: Taskboard{Addr: "[::1]:8080", DBPath: "data/taskboard.db"},
+		},
+		{
+			name: "localhost は許可",
+			env:  map[string]string{"TASKBOARD_ADDR": "localhost:8080"},
+			want: Taskboard{Addr: "localhost:8080", DBPath: "data/taskboard.db"},
+		},
+		// 画面は認証なしなので、ループバック以外に公開すると API キーを迂回できてしまう
+		{name: "全インターフェース(0.0.0.0)は拒否", env: map[string]string{"TASKBOARD_ADDR": "0.0.0.0:8080"}, wantErr: true},
+		{name: "ホスト省略(全インターフェース)は拒否", env: map[string]string{"TASKBOARD_ADDR": ":8080"}, wantErr: true},
+		{name: "LAN の IP は拒否", env: map[string]string{"TASKBOARD_ADDR": "192.168.1.10:8080"}, wantErr: true},
+		{name: "ホスト名は拒否", env: map[string]string{"TASKBOARD_ADDR": "example.com:8080"}, wantErr: true},
 		{name: "ポートなしはエラー", env: map[string]string{"TASKBOARD_ADDR": "127.0.0.1"}, wantErr: true},
 		{name: "ポートが数値でないとエラー", env: map[string]string{"TASKBOARD_ADDR": "127.0.0.1:http"}, wantErr: true},
 		{name: "ポート0はエラー", env: map[string]string{"TASKBOARD_ADDR": "127.0.0.1:0"}, wantErr: true},
@@ -40,8 +58,61 @@ func TestLoadTaskboard(t *testing.T) {
 			if err != nil {
 				t.Fatalf("予期しないエラー: %v", err)
 			}
-			if got != tt.want {
+			if got.Addr != tt.want.Addr || got.DBPath != tt.want.DBPath {
 				t.Errorf("got %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLoadTaskboard_APIKey(t *testing.T) {
+	got, err := LoadTaskboard(envFrom(map[string]string{"TASKBOARD_API_KEY": "0123456789abcdef"}))
+	if err != nil {
+		t.Fatalf("16文字のキーが拒否された: %v", err)
+	}
+	if got.APIKey != "0123456789abcdef" {
+		t.Errorf("APIKey = %q", got.APIKey)
+	}
+
+	if _, err := LoadTaskboard(envFrom(map[string]string{"TASKBOARD_API_KEY": "short"})); err == nil {
+		t.Error("短すぎるキーでエラーを期待したが nil")
+	}
+}
+
+func TestLoadTaskboard_CORSOrigins(t *testing.T) {
+	tests := []struct {
+		name    string
+		raw     string
+		want    []string
+		wantErr bool
+	}{
+		{name: "未設定", raw: "", want: nil},
+		{name: "複数指定・空白と末尾スラッシュは正規化", raw: " http://localhost:3000/ , https://app.example.com",
+			want: []string{"http://localhost:3000", "https://app.example.com"}},
+		{name: "空要素は無視", raw: "http://localhost:3000,,", want: []string{"http://localhost:3000"}},
+		{name: "ホストとスキームは小文字に揃える", raw: "HTTP://LocalHost:3000", want: []string{"http://localhost:3000"}},
+		{name: "既定ポートは省略する", raw: "http://localhost:80,https://app.example.com:443",
+			want: []string{"http://localhost", "https://app.example.com"}},
+		{name: "IPv6 の既定ポート", raw: "http://[::1]:80", want: []string{"http://[::1]"}},
+		{name: "スキームなし", raw: "localhost:3000", wantErr: true},
+		{name: "http(s) 以外", raw: "ftp://example.com", wantErr: true},
+		{name: "パス付き", raw: "http://example.com/app", wantErr: true},
+		{name: "ワイルドカード", raw: "*", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := LoadTaskboard(envFrom(map[string]string{"TASKBOARD_CORS_ORIGINS": tt.raw}))
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("エラーを期待したが nil: %v", got.CORSOrigins)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("予期しないエラー: %v", err)
+			}
+			if !slices.Equal(got.CORSOrigins, tt.want) {
+				t.Errorf("CORSOrigins = %v, want %v", got.CORSOrigins, tt.want)
 			}
 		})
 	}
@@ -56,7 +127,9 @@ func TestLoadInsight(t *testing.T) {
 		t.Errorf("Addr = %q, want 127.0.0.1:8081", got.Addr)
 	}
 
-	if _, err := LoadInsight(envFrom(map[string]string{"INSIGHT_ADDR": "bad"})); err == nil {
-		t.Error("不正なアドレスでエラーを期待したが nil")
+	for _, addr := range []string{"bad", "0.0.0.0:8081"} {
+		if _, err := LoadInsight(envFrom(map[string]string{"INSIGHT_ADDR": addr})); err == nil {
+			t.Errorf("INSIGHT_ADDR=%q でエラーを期待したが nil", addr)
+		}
 	}
 }

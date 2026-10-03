@@ -29,7 +29,10 @@ func Open(ctx context.Context, path string) (*sql.DB, error) {
 	dsn := "file:" + path +
 		"?_pragma=foreign_keys(1)" +
 		"&_pragma=busy_timeout(5000)" +
-		"&_pragma=journal_mode(WAL)"
+		"&_pragma=journal_mode(WAL)" +
+		// 書き込みトランザクションを開始時点でロックする。既定の deferred だと、読み取り後に
+		// 別プロセス（sqlite3 CLI など）が書き込むと昇格に失敗し、busy_timeout も効かない。
+		"&_txlock=immediate"
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("DB のオープンに失敗: %w", err)

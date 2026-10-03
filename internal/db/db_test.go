@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 const now = "2026-10-03T00:00:00Z"
@@ -144,5 +145,62 @@ func TestSchema_DeleteTaskCascades(t *testing.T) {
 		if count != 0 {
 			t.Errorf("%s に %d 件残っている（foreign_keys が無効の可能性）", table, count)
 		}
+	}
+}
+
+// 読み取ってから書き込むトランザクション（task.Service.Update と同じ形）の途中で、
+// 別の接続（sqlite3 CLI など別プロセス相当）が書き込んでも失敗しないことを確かめる。
+// deferred トランザクションだと、後から書き込もうとした時点で SQLITE_BUSY_SNAPSHOT になり
+// busy_timeout も効かない。immediate なら開始時点でロックを取るので、相手が待たされる。
+func TestOpen_ReadThenWriteTxSurvivesOtherWriter(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "shared.db")
+	a, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = a.Close() })
+	if err := Migrate(ctx, a); err != nil {
+		t.Fatal(err)
+	}
+	b, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = b.Close() })
+
+	tx, err := a.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var before int
+	if err := tx.QueryRow(`SELECT count(*) FROM tasks`).Scan(&before); err != nil {
+		t.Fatal(err)
+	}
+
+	otherDone := make(chan error, 1)
+	go func() {
+		_, err := b.Exec(`INSERT INTO tasks (title, created_at, updated_at) VALUES ('other', ?, ?)`, now, now)
+		otherDone <- err
+	}()
+	// 別接続の書き込みが（deferred なら）先に完了してしまう猶予を与える。
+	time.Sleep(100 * time.Millisecond)
+
+	if _, err := tx.Exec(`INSERT INTO tasks (title, created_at, updated_at) VALUES ('mine', ?, ?)`, now, now); err != nil {
+		t.Fatalf("読み取り後の書き込みが失敗した（deferred の BUSY_SNAPSHOT）: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-otherDone; err != nil {
+		t.Fatalf("別接続の書き込みはロック解放後に成功するはず: %v", err)
+	}
+
+	var count int
+	if err := a.QueryRow(`SELECT count(*) FROM tasks`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 2 {
+		t.Errorf("count = %d, want 2", count)
 	}
 }

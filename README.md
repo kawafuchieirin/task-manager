@@ -31,9 +31,65 @@ DB は初回起動時に `data/taskboard.db` に作成され、マイグレー�
 
 | 環境変数 | 既定値 | 説明 |
 |---|---|---|
-| `TASKBOARD_ADDR` | `127.0.0.1:8080` | taskboard の待ち受けアドレス |
+| `TASKBOARD_ADDR` | `127.0.0.1:8080` | taskboard の待ち受けアドレス（ループバックのみ。`0.0.0.0` などは起動エラー） |
 | `TASKBOARD_DB_PATH` | `data/taskboard.db` | SQLite ファイルのパス |
-| `INSIGHT_ADDR` | `127.0.0.1:8081` | insight の待ち受けアドレス |
+| `TASKBOARD_API_KEY` | （なし） | 設定すると `/api/v1` に `Authorization: Bearer <キー>` を要求する（16文字以上） |
+| `TASKBOARD_CORS_ORIGINS` | （なし） | ブラウザから API を呼ぶ他のアプリのオリジン（カンマ区切り。例: `http://localhost:3000`） |
+| `INSIGHT_ADDR` | `127.0.0.1:8081` | insight の待ち受けアドレス（ループバックのみ） |
+
+## 他のアプリから API を使う
+
+画面と同じデータを JSON の REST API（`/api/v1`）で操作できます。
+
+```sh
+# 作成（201 と Location ヘッダーを返す）
+curl -X POST http://127.0.0.1:8080/api/v1/tasks \
+  -H 'Content-Type: application/json' \
+  -d '{"title": "Go を学ぶ", "estimated_min": 90}'
+
+# 一覧（status=todo / doing / done で絞り込み可）
+curl 'http://127.0.0.1:8080/api/v1/tasks?status=todo'
+
+# 完了にする（部分更新。completed_at が自動で記録される）
+curl -X PATCH http://127.0.0.1:8080/api/v1/tasks/1 \
+  -H 'Content-Type: application/json' -d '{"status": "done"}'
+
+# 進捗
+curl http://127.0.0.1:8080/api/v1/stats/summary   # {"total":1,"done":1,"progress_percent":100}
+```
+
+| メソッド | パス | 説明 |
+|---|---|---|
+| GET | `/api/v1/tasks?status=` | 一覧 |
+| POST | `/api/v1/tasks` | 作成 |
+| GET / PATCH / DELETE | `/api/v1/tasks/{id}` | 取得 / 部分更新 / 削除 |
+| GET | `/api/v1/stats/summary` | 進捗（完了件数・完了率） |
+
+- 日時は UTC の RFC3339、未設定の値は `null` で返します
+- PATCH は部分更新です。送らなかった項目は変わりません
+  - `"estimated_min": null` を送ると目標時間を未設定に戻せます
+  - それ以外の項目（`title` / `description` / `status`）の `null` は「変更しない」として扱います
+- 未知のフィールドはエラー（400）、`?status=` に不正な値を渡すと 422 になります
+- `TASKBOARD_CORS_ORIGINS` で許可したオリジンは、CSRF 対策の信頼オリジンにもなります（画面のフォーム送信も受け付けます）。信頼できるアプリだけを登録してください
+- エラーは `{"error": {"code": "...", "message": "...", "details": [...]}}` の形式です
+
+| code | HTTP | 意味 |
+|---|---|---|
+| `invalid_json` | 400 | JSON の構文・型の誤り、未知のフィールド |
+| `unauthorized` | 401 | API キーが無い・違う |
+| `not_found` | 404 | タスクまたは API のパスが存在しない |
+| `method_not_allowed` | 405 | パスに対して使えないメソッド（`Allow` ヘッダーに使えるメソッド） |
+| `payload_too_large` | 413 | ボディが 1MB を超えている |
+| `unsupported_media_type` | 415 | `Content-Type: application/json` でない |
+| `validation_failed` | 422 | 入力値の検証エラー（`details` に項目ごとの理由） |
+| `internal_error` | 500 | サーバー内部のエラー |
+
+API の手前の防御で拒否された場合は、JSON ではなく平文で返ります。
+
+| HTTP | 原因 |
+|---|---|
+| 403 | 他サイトのブラウザからの送信（CSRF 対策）。`TASKBOARD_CORS_ORIGINS` に登録すると許可される |
+| 421 | `Host` ヘッダーが `localhost` / `127.0.0.1` / `::1` 以外（DNS リバインディング対策） |
 
 ## 開発コマンド
 
