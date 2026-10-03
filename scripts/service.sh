@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # taskboard / insight をバックグラウンドで起動・停止する。
-# mise のタスク（start / stop / restart / status / logs）から呼び出す。
+# Makefile（make start / stop / restart / status / logs / build）から呼び出す。
 #
 #   .run/<name>.pid  起動中プロセスの PID
 #   .run/<name>.log  標準出力・標準エラー（起動のたびに作り直す）
@@ -99,7 +99,7 @@ cmd_start() {
   local name pid started=()
   for name in "${SERVICES[@]}"; do
     if pid=$(running_pid "$name"); then
-      echo "$name は起動済みです（PID ${pid}）。コードを変更した場合は mise run restart を実行してください"
+      echo "$name は起動済みです（PID ${pid}）。コードを変更した場合は make restart を実行してください"
       continue
     fi
     # nohup と標準入力の切り離しで、ターミナルを閉じても動き続けるようにする。
@@ -126,7 +126,7 @@ cmd_start() {
   echo ""
   cmd_status
   echo ""
-  echo "停止: mise run stop / ログ: mise run logs"
+  echo "停止: make stop / ログ: make logs"
 }
 
 cmd_stop() {
@@ -154,20 +154,21 @@ cmd_logs() {
     [[ -f $(log_file "$name") ]] && files+=("$(log_file "$name")")
   done
   if [[ ${#files[@]} -eq 0 ]]; then
-    echo "ログがありません。mise run start で起動してください" >&2
+    echo "ログがありません。make start で起動してください" >&2
     exit 1
   fi
   tail -n 30 -F "${files[@]}"
 }
 
 case "${1:-}" in
+  build) build ;;
   start) cmd_start ;;
   stop) cmd_stop ;;
   restart) cmd_stop && cmd_start ;;
   status) cmd_status ;;
   logs) cmd_logs ;;
   *)
-    echo "使い方: $0 {start|stop|restart|status|logs}" >&2
+    echo "使い方: $0 {start|stop|restart|status|logs|build}" >&2
     exit 2
     ;;
 esac
