@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -245,5 +246,72 @@ func TestDelete_NoContent(t *testing.T) {
 	})
 	if err := c.Delete(context.Background(), 5); err != nil {
 		t.Errorf("err = %v", err)
+	}
+}
+
+func TestTimer(t *testing.T) {
+	var calls []string
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		calls = append(calls, r.Method+" "+r.URL.Path)
+		switch r.URL.Path {
+		case "/api/v1/tasks/3/timer/start":
+			writeJSON(w, 409, `{"error":{"code":"timer_already_running","message":"「A」のタイマーが動いています。先に停止してください"}}`)
+		case "/api/v1/tasks/3/timer/stop":
+			writeJSON(w, 200, `{"id":9,"task_id":3,"started_at":"2026-10-03T09:00:00Z","ended_at":"2026-10-03T09:30:00Z","duration_sec":1800}`)
+		}
+	})
+	ctx := context.Background()
+
+	_, err := c.StartTimer(ctx, 3)
+	var ae *APIError
+	if !errors.As(err, &ae) || ae.StatusCode != 409 || ae.Code != "timer_already_running" || ae.Message == "" {
+		t.Errorf("409 は APIError（メッセージ付き）: %v", err)
+	}
+	e, err := c.StopTimer(ctx, 3)
+	if err != nil || e.DurationSec != 1800 || e.EndedAt == nil {
+		t.Errorf("停止: %+v, %v", e, err)
+	}
+	if len(calls) != 2 || calls[0] != "POST /api/v1/tasks/3/timer/start" {
+		t.Errorf("呼び出し: %v（書き込みは再試行しない）", calls)
+	}
+}
+
+func TestTimeEntries(t *testing.T) {
+	var body map[string]string
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet:
+			writeJSON(w, 200, `{"time_entries":[{"id":1,"task_id":2,"started_at":"2026-10-03T09:00:00Z","ended_at":null,"duration_sec":60}]}`)
+		case r.Method == http.MethodPost:
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			writeJSON(w, 201, `{"id":2,"task_id":2,"started_at":"2026-10-03T08:00:00Z","ended_at":"2026-10-03T08:30:00Z"}`)
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/time-entries/2":
+			w.WriteHeader(204)
+		default:
+			writeJSON(w, 404, `{"error":{"code":"not_found","message":"時間記録が見つかりません"}}`)
+		}
+	})
+	ctx := context.Background()
+
+	entries, err := c.ListTimeEntries(ctx, 2)
+	if err != nil || len(entries) != 1 || entries[0].EndedAt != nil {
+		t.Errorf("一覧: %+v, %v", entries, err)
+	}
+
+	jst := time.FixedZone("JST", 9*60*60)
+	start := time.Date(2026, 10, 3, 17, 0, 0, 0, jst)
+	if _, err := c.AddTimeEntry(ctx, 2, start, start.Add(30*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if body["started_at"] != "2026-10-03T08:00:00Z" || body["ended_at"] != "2026-10-03T08:30:00Z" {
+		t.Errorf("UTC で送るはず: %v", body)
+	}
+
+	if err := c.DeleteTimeEntry(ctx, 2); err != nil {
+		t.Errorf("削除: %v", err)
+	}
+	err = c.DeleteTimeEntry(ctx, 99)
+	if !errors.Is(err, ErrNotFound) || !strings.Contains(err.Error(), "時間記録が見つかりません") {
+		t.Errorf("存在しない区間: %v", err)
 	}
 }

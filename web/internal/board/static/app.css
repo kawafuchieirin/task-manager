@@ -73,6 +73,7 @@ body {
 .progress__label strong { color: var(--text); font-size: 1.1rem; }
 .progress__track { height: 14px; border-radius: 999px; background: var(--border); overflow: hidden; }
 .progress__fill { height: 100%; background: var(--done); transition: width 0.3s ease; }
+.progress__time { margin: 6px 0 0; color: var(--muted); font-size: 0.85rem; }
 
 /* フォーム */
 .new-task {
@@ -145,5 +146,33 @@ input, textarea {
 .card--done .card__description { text-decoration: line-through; }
 
 .edit-task { display: grid; gap: 8px; }
+
+/* 目標と実績。目標を超えたら強調する */
+.card__time { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 6px 0 0; color: var(--muted); font-size: 0.8rem; }
+.card__time--over { color: var(--danger); font-weight: 600; }
+.card__diff { font-variant-numeric: tabular-nums; }
+
+/* 計測中のタイマー */
+.card--running { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.card__timer { display: flex; align-items: center; gap: 6px; margin: 8px 0 0; color: var(--accent); font-size: 0.85rem; font-weight: 600; }
+.card__timer-clock { font-variant-numeric: tabular-nums; }
+.card__timer-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) { .card__timer-dot { animation: none; } }
+
+.button--timer { color: var(--accent); border-color: var(--accent); }
+.button--timer-stop { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.button--small { padding: 2px 8px; font-size: 0.75rem; }
+
+/* 時間記録のパネル */
+.time-panel { display: grid; gap: 10px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border); }
+.time-panel__entries { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; font-size: 0.85rem; }
+.time-panel__entry { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.time-panel__duration { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+.time-panel__empty { margin: 0; color: var(--muted); font-size: 0.85rem; }
+.time-panel__add { display: grid; gap: 4px; }
+.time-panel__add label { font-size: 0.8rem; color: var(--muted); }
+.time-panel__row { display: flex; gap: 6px; }
+.time-panel__row input { width: 96px; flex: 0 0 auto; }
 
 .htmx-request { opacity: 0.6; transition: opacity 0.2s; }

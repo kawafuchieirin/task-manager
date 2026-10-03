@@ -19,6 +19,10 @@ const (
 	codeValidationFailed     = "validation_failed"
 	codeNotFound             = "not_found"
 	codeMethodNotAllowed     = "method_not_allowed"
+	codeTimerAlreadyRunning  = "timer_already_running"
+	codeTimerNotRunning      = "timer_not_running"
+	codeTaskCompleted        = "task_completed"
+	codeEntryRunning         = "entry_running"
 	codeUnauthorized         = "unauthorized"
 	codeUnsupportedMediaType = "unsupported_media_type"
 	codePayloadTooLarge      = "payload_too_large"
@@ -51,12 +55,24 @@ func writeError(w http.ResponseWriter, status int, code, message string, details
 // writeServiceError はサービス層のエラーを HTTP レスポンスに変換する。
 // 想定外のエラーは詳細をログにのみ出し、クライアントには一般的なメッセージを返す。
 func writeServiceError(w http.ResponseWriter, r *http.Request, logger *slog.Logger, err error) {
-	var ve *task.ValidationError
+	var (
+		ve      *task.ValidationError
+		running *task.TimerRunningError
+	)
 	switch {
 	case errors.As(err, &ve):
 		writeError(w, http.StatusUnprocessableEntity, codeValidationFailed, "入力値が不正です", ve.Errors)
-	case errors.Is(err, task.ErrNotFound):
+	case errors.Is(err, task.ErrNotFound), errors.Is(err, task.ErrEntryNotFound):
 		writeError(w, http.StatusNotFound, codeNotFound, err.Error(), nil)
+	// 状態の衝突（409）。他のアプリが分岐できるよう、原因ごとにコードを分ける。
+	case errors.As(err, &running):
+		writeError(w, http.StatusConflict, codeTimerAlreadyRunning, err.Error(), nil)
+	case errors.Is(err, task.ErrTimerNotRunning):
+		writeError(w, http.StatusConflict, codeTimerNotRunning, err.Error(), nil)
+	case errors.Is(err, task.ErrTaskCompleted):
+		writeError(w, http.StatusConflict, codeTaskCompleted, err.Error(), nil)
+	case errors.Is(err, task.ErrEntryRunning):
+		writeError(w, http.StatusConflict, codeEntryRunning, err.Error(), nil)
 	default:
 		logger.ErrorContext(r.Context(), "API の処理に失敗", "method", r.Method, "path", r.URL.Path, "error", err)
 		writeError(w, http.StatusInternalServerError, codeInternal, "サーバー内部でエラーが発生しました", nil)

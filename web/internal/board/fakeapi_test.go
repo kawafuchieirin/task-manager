@@ -17,16 +17,18 @@ import (
 // 画面が API の契約（JSON の形・エラー形式・完了日時の扱い）どおりに動くかを確かめるために使う。
 // 検証は画面のテストに必要な分（タイトル必須・ステータスの値）だけを再現する。
 type fakeAPI struct {
-	mu     sync.Mutex
-	tasks  []taskclient.Task
-	nextID int64
-	now    time.Time
-	down   bool // true なら 503 を返す（API 停止中の再現）
+	mu          sync.Mutex
+	tasks       []taskclient.Task
+	entries     []taskclient.TimeEntry
+	nextID      int64
+	nextEntryID int64
+	now         time.Time
+	down        bool // true なら 503 を返す（API 停止中の再現）
 }
 
 func newFakeAPI(t *testing.T) (*fakeAPI, *taskclient.Client) {
 	t.Helper()
-	f := &fakeAPI{nextID: 1, now: time.Date(2026, 10, 3, 9, 0, 0, 0, time.UTC)}
+	f := &fakeAPI{nextID: 1, nextEntryID: 1, now: time.Date(2026, 10, 3, 9, 0, 0, 0, time.UTC)}
 	srv := httptest.NewServer(f)
 	t.Cleanup(srv.Close)
 	c, err := taskclient.New(srv.URL, "", taskclient.WithRetry(0, 0))
@@ -54,10 +56,127 @@ func (f *fakeAPI) get(id int64) (taskclient.Task, bool) {
 	defer f.mu.Unlock()
 	for _, t := range f.tasks {
 		if t.ID == id {
-			return t, true
+			return f.withTime(t), true
 		}
 	}
 	return taskclient.Task{}, false
+}
+
+// addEntry は終了済みの区間を直接追加する（テストの前提づくり用）。
+func (f *fakeAPI) addEntry(taskID int64, start time.Time, d time.Duration) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	end := start.Add(d)
+	f.entries = append(f.entries, taskclient.TimeEntry{ID: f.nextEntryID, TaskID: taskID, StartedAt: start, EndedAt: &end})
+	f.nextEntryID++
+}
+
+// withTime は API と同じく、タスクに実績時間と計測中タイマーの開始時刻を付ける。
+func (f *fakeAPI) withTime(t taskclient.Task) taskclient.Task {
+	t.ActualSec, t.RunningSince = 0, nil
+	for _, e := range f.entries {
+		if e.TaskID != t.ID {
+			continue
+		}
+		end := f.now
+		if e.EndedAt != nil {
+			end = *e.EndedAt
+		} else {
+			start := e.StartedAt
+			t.RunningSince = &start
+		}
+		t.ActualSec += int64(end.Sub(e.StartedAt) / time.Second)
+	}
+	return t
+}
+
+func (f *fakeAPI) entryJSON(e taskclient.TimeEntry) taskclient.TimeEntry {
+	end := f.now
+	if e.EndedAt != nil {
+		end = *e.EndedAt
+	}
+	e.DurationSec = int64(end.Sub(e.StartedAt) / time.Second)
+	return e
+}
+
+func (f *fakeAPI) serveTime(w http.ResponseWriter, r *http.Request) bool {
+	path := r.URL.Path
+	if id, ok := strings.CutPrefix(path, "/api/v1/time-entries/"); ok && r.Method == http.MethodDelete {
+		entryID, _ := strconv.ParseInt(id, 10, 64)
+		for i, e := range f.entries {
+			if e.ID == entryID {
+				f.entries = append(f.entries[:i], f.entries[i+1:]...)
+				w.WriteHeader(http.StatusNoContent)
+				return true
+			}
+		}
+		writeAPIError(w, http.StatusNotFound, "not_found", "時間記録が見つかりません", nil)
+		return true
+	}
+
+	rest, ok := strings.CutPrefix(path, "/api/v1/tasks/")
+	if !ok {
+		return false
+	}
+	idStr, action, ok := strings.Cut(rest, "/")
+	if !ok {
+		return false
+	}
+	taskID, _ := strconv.ParseInt(idStr, 10, 64)
+	i := f.index(taskID)
+	if i < 0 {
+		writeAPIError(w, http.StatusNotFound, "not_found", "タスクが見つかりません", nil)
+		return true
+	}
+
+	switch {
+	case action == "timer/start" && r.Method == http.MethodPost:
+		for _, e := range f.entries {
+			if e.EndedAt == nil {
+				title := f.tasks[f.index(e.TaskID)].Title
+				writeAPIError(w, http.StatusConflict, "timer_already_running", "「"+title+"」のタイマーが動いています。先に停止してください", nil)
+				return true
+			}
+		}
+		if f.tasks[i].Status == taskclient.StatusTodo {
+			f.tasks[i].Status = taskclient.StatusDoing
+		}
+		e := taskclient.TimeEntry{ID: f.nextEntryID, TaskID: taskID, StartedAt: f.now}
+		f.nextEntryID++
+		f.entries = append(f.entries, e)
+		writeAPIJSON(w, http.StatusCreated, f.entryJSON(e))
+	case action == "timer/stop" && r.Method == http.MethodPost:
+		for j, e := range f.entries {
+			if e.TaskID == taskID && e.EndedAt == nil {
+				now := f.now
+				f.entries[j].EndedAt = &now
+				writeAPIJSON(w, http.StatusOK, f.entryJSON(f.entries[j]))
+				return true
+			}
+		}
+		writeAPIError(w, http.StatusConflict, "timer_not_running", "このタスクのタイマーは動いていません", nil)
+	case action == "time-entries" && r.Method == http.MethodGet:
+		list := []taskclient.TimeEntry{}
+		for _, e := range f.entries {
+			if e.TaskID == taskID {
+				list = append(list, f.entryJSON(e))
+			}
+		}
+		writeAPIJSON(w, http.StatusOK, map[string]any{"time_entries": list})
+	case action == "time-entries" && r.Method == http.MethodPost:
+		var in struct {
+			StartedAt time.Time `json:"started_at"`
+			EndedAt   time.Time `json:"ended_at"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		e := taskclient.TimeEntry{ID: f.nextEntryID, TaskID: taskID, StartedAt: in.StartedAt.UTC(), EndedAt: &in.EndedAt}
+		f.nextEntryID++
+		f.entries = append(f.entries, e)
+		writeAPIJSON(w, http.StatusCreated, f.entryJSON(e))
+	default:
+		return false
+	}
+	return true
 }
 
 func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -68,9 +187,16 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if f.serveTime(w, r) {
+		return
+	}
 	switch {
 	case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tasks":
-		writeAPIJSON(w, http.StatusOK, map[string]any{"tasks": f.tasks})
+		list := make([]taskclient.Task, len(f.tasks))
+		for i, t := range f.tasks {
+			list[i] = f.withTime(t)
+		}
+		writeAPIJSON(w, http.StatusOK, map[string]any{"tasks": list})
 	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tasks":
 		var in struct {
 			Title        string `json:"title"`
@@ -97,7 +223,7 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		switch r.Method {
 		case http.MethodGet:
-			writeAPIJSON(w, http.StatusOK, f.tasks[i])
+			writeAPIJSON(w, http.StatusOK, f.withTime(f.tasks[i]))
 		case http.MethodDelete:
 			f.tasks = append(f.tasks[:i], f.tasks[i+1:]...)
 			w.WriteHeader(http.StatusNoContent)

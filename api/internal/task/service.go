@@ -50,10 +50,14 @@ func (n *Nullable[T]) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// Summary はボード全体の進捗。
+// Summary はボード全体の進捗と時間の合計。
 type Summary struct {
 	Total int
 	Done  int
+	// EstimatedMin は目標時間を設定したタスクの目標時間の合計（分）。
+	EstimatedMin int
+	// ActualSec は全タスクの実績時間の合計（秒）。計測中の区間は取得時点までを含める。
+	ActualSec int64
 }
 
 // ProgressPercent は完了率（%）を返す。切り捨てなので 100 は全件完了のときだけ。
@@ -88,22 +92,29 @@ func NewService(database *sql.DB, opts ...Option) *Service {
 	return s
 }
 
-const selectColumns = `id, title, description, status, estimated_min, completed_at, created_at, updated_at`
+// taskQuery はタスクと、その実績時間・計測中タイマーをまとめて取得する SELECT 文。
+// 時間記録を1回の JOIN で集計し、タスクごとに問い合わせる N+1 を避ける。
+// 最初のプレースホルダーには、計測中の区間を数える基準となる現在時刻を渡す。
+// 時計が戻った場合でも負の時間にならないよう、区間ごとに 0 で下限を取る。
+const taskQuery = `SELECT t.id, t.title, t.description, t.status, t.estimated_min, t.completed_at, t.created_at, t.updated_at,
+	coalesce(sum(max(0, unixepoch(coalesce(e.ended_at, ?)) - unixepoch(e.started_at))), 0),
+	max(CASE WHEN e.ended_at IS NULL THEN e.started_at END)
+FROM tasks t LEFT JOIN time_entries e ON e.task_id = t.id`
 
 // List はタスクを作成順に返す。status を指定するとそのステータスのみに絞り込む。
 func (s *Service) List(ctx context.Context, status *Status) ([]Task, error) {
-	query := `SELECT ` + selectColumns + ` FROM tasks`
-	var args []any
+	query := taskQuery
+	args := []any{db.FormatTime(s.now())}
 	if status != nil {
 		if !status.Valid() {
 			v := &validator{}
 			v.status(*status)
 			return nil, v.err()
 		}
-		query += ` WHERE status = ?`
+		query += ` WHERE t.status = ?`
 		args = append(args, string(*status))
 	}
-	query += ` ORDER BY id`
+	query += ` GROUP BY t.id ORDER BY t.id`
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -127,7 +138,7 @@ func (s *Service) List(ctx context.Context, status *Status) ([]Task, error) {
 
 // Get は ID でタスクを取得する。存在しなければ ErrNotFound を返す。
 func (s *Service) Get(ctx context.Context, id int64) (Task, error) {
-	return getTask(ctx, s.db, id)
+	return getTask(ctx, s.db, id, s.now())
 }
 
 // Create はタスクを作成する。
@@ -177,7 +188,7 @@ func (s *Service) Update(ctx context.Context, id int64, in UpdateInput) (Task, e
 	}
 	defer func() { _ = tx.Rollback() }() // Commit 後の Rollback は何もしない
 
-	t, err := getTask(ctx, tx, id)
+	t, err := getTask(ctx, tx, id, s.now())
 	if err != nil {
 		return Task{}, err
 	}
@@ -213,7 +224,13 @@ func (s *Service) Update(ctx context.Context, id int64, in UpdateInput) (Task, e
 	); err != nil {
 		return Task{}, fmt.Errorf("タスクの更新に失敗: %w", err)
 	}
-	updated, err := getTask(ctx, tx, id)
+	// 完了にしたら計測中のタイマーを止める。止め忘れて計測が続くのを防ぐため。
+	if t.Status == StatusDone {
+		if err := stopRunning(ctx, tx, id, now); err != nil && !errors.Is(err, ErrTimerNotRunning) {
+			return Task{}, err
+		}
+	}
+	updated, err := getTask(ctx, tx, id, now)
 	if err != nil {
 		return Task{}, err
 	}
@@ -252,14 +269,21 @@ func (s *Service) Delete(ctx context.Context, id int64) error {
 	return nil
 }
 
-// Summary はボード全体の進捗を返す。
+// Summary はボード全体の進捗と時間の合計を返す。
 func (s *Service) Summary(ctx context.Context) (Summary, error) {
 	var sum Summary
 	err := s.db.QueryRowContext(ctx,
-		`SELECT count(*), coalesce(sum(status = 'done'), 0) FROM tasks`,
-	).Scan(&sum.Total, &sum.Done)
+		`SELECT count(*), coalesce(sum(status = 'done'), 0), coalesce(sum(estimated_min), 0) FROM tasks`,
+	).Scan(&sum.Total, &sum.Done, &sum.EstimatedMin)
 	if err != nil {
 		return Summary{}, fmt.Errorf("進捗の集計に失敗: %w", err)
+	}
+	err = s.db.QueryRowContext(ctx,
+		`SELECT coalesce(sum(max(0, unixepoch(coalesce(ended_at, ?)) - unixepoch(started_at))), 0) FROM time_entries`,
+		db.FormatTime(s.now()),
+	).Scan(&sum.ActualSec)
+	if err != nil {
+		return Summary{}, fmt.Errorf("実績時間の集計に失敗: %w", err)
 	}
 	return sum, nil
 }
@@ -267,10 +291,12 @@ func (s *Service) Summary(ctx context.Context) (Summary, error) {
 // queryer は *sql.DB と *sql.Tx の共通部分。
 type queryer interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 }
 
-func getTask(ctx context.Context, q queryer, id int64) (Task, error) {
-	row := q.QueryRowContext(ctx, `SELECT `+selectColumns+` FROM tasks WHERE id = ?`, id)
+func getTask(ctx context.Context, q queryer, id int64, now time.Time) (Task, error) {
+	row := q.QueryRowContext(ctx, taskQuery+` WHERE t.id = ? GROUP BY t.id`, db.FormatTime(now), id)
 	t, err := scanTask(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Task{}, ErrNotFound
@@ -289,8 +315,10 @@ func scanTask(sc scanner) (Task, error) {
 		estimated            sql.NullInt64
 		completed            sql.NullString
 		createdAt, updatedAt string
+		running              sql.NullString
 	)
-	if err := sc.Scan(&t.ID, &t.Title, &t.Description, &status, &estimated, &completed, &createdAt, &updatedAt); err != nil {
+	if err := sc.Scan(&t.ID, &t.Title, &t.Description, &status, &estimated, &completed, &createdAt, &updatedAt,
+		&t.ActualSec, &running); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Task{}, err
 		}
@@ -315,6 +343,13 @@ func scanTask(sc scanner) (Task, error) {
 	}
 	if t.UpdatedAt, err = db.ParseTime(updatedAt); err != nil {
 		return Task{}, err
+	}
+	if running.Valid {
+		r, perr := db.ParseTime(running.String)
+		if perr != nil {
+			return Task{}, perr
+		}
+		t.RunningSince = &r
 	}
 	return t, nil
 }
