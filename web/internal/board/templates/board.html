@@ -9,6 +9,7 @@
          aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{.Percent}}">
       <div class="progress__fill" style="width: {{.Percent}}%"></div>
     </div>
+    <p class="progress__time">目標合計 {{minutes .EstimatedMin}} ／ 実績合計 {{duration .ActualSec}}</p>
   </div>
 
   {{with .NewForm -}}
@@ -41,7 +42,7 @@
       <h2 id="column-{{.Status}}" class="column__title">{{.Label}} <span class="column__count">{{len .Tasks}}</span></h2>
       <ul class="cards">
         {{range .Tasks -}}
-          {{if eq .ID $.EditingID}}{{template "edit-card" $.Edit}}{{else}}{{template "card" .}}{{end}}
+          {{if eq .ID $.EditingID}}{{template "edit-card" $.Edit}}{{else}}{{template "card" ($.Card .)}}{{end}}
         {{- else -}}
         <li class="cards__empty">タスクはありません</li>
         {{- end}}
@@ -53,24 +54,70 @@
 {{- end}}
 
 {{define "card" -}}
-<li class="card card--{{.Status}}" id="task-{{.ID}}">
+<li class="card card--{{.Status}}{{if .Running}} card--running{{end}}" id="task-{{.ID}}">
   <p class="card__title">{{.Title}}</p>
   {{with .Description}}<p class="card__description">{{.}}</p>{{end}}
-  {{if or .EstimatedMin .CompletedAt -}}
-  <p class="card__meta">
+  {{with .CompletedAt -}}
+  <p class="card__meta"><span>完了 {{jst .}}</span></p>
+  {{- end}}
+  <p class="card__time{{if .Over}} card__time--over{{end}}">
     {{with .EstimatedMin}}<span>目標 {{minutes .}}</span>{{end}}
-    {{with .CompletedAt}}<span>完了 {{jst .}}</span>{{end}}
+    <span>実績 {{.ActualText}}</span>
+    {{with .DiffText}}<span class="card__diff">{{.}}</span>{{end}}
+  </p>
+  {{if .Running -}}
+  <p class="card__timer" role="timer" aria-live="off">
+    <span class="card__timer-dot" aria-hidden="true"></span>計測中
+    <span class="card__timer-clock" data-elapsed="{{.ActualSec}}">{{clock .ActualSec}}</span>
   </p>
   {{- end}}
   <div class="card__actions">
+    {{if .Running -}}
+    <button type="button" class="button button--timer-stop" hx-post="/tasks/{{.ID}}/timer/stop">■ 停止</button>
+    {{- else if .CanStartTimer -}}
+    <button type="button" class="button button--timer" hx-post="/tasks/{{.ID}}/timer/start">▶ 開始</button>
+    {{- end}}
     {{range actions .Status -}}
     <button type="button" class="button" hx-post="/tasks/{{$.ID}}/status" hx-vals='{"status": "{{.To}}"}'>{{.Label}}</button>
     {{- end}}
+    <button type="button" class="button button--ghost" hx-get="/tasks/{{.ID}}/time"
+            {{if .Panel}}aria-expanded="true"{{else}}aria-expanded="false"{{end}}>時間の記録</button>
     <button type="button" class="button button--ghost" hx-get="/tasks/{{.ID}}/edit">編集</button>
     <button type="button" class="button button--danger" hx-delete="/tasks/{{.ID}}"
             hx-confirm="「{{.Title}}」を削除しますか？">削除</button>
   </div>
+  {{with .Panel}}{{template "time-panel" .}}{{end}}
 </li>
+{{- end}}
+
+{{define "time-panel" -}}
+<section class="time-panel" aria-label="時間の記録">
+  {{with .Entries -}}
+  <ul class="time-panel__entries">
+    {{range . -}}
+    <li class="time-panel__entry">
+      <span>{{.Range}}</span>
+      <span class="time-panel__duration">{{.Duration}}</span>
+      <button type="button" class="button button--danger button--small"
+              hx-delete="/tasks/{{.TaskID}}/time-entries/{{.ID}}"
+              hx-confirm="{{if .Running}}計測中のタイマーを取り消しますか？{{else}}この記録（{{.Range}}）を削除しますか？{{end}}">削除</button>
+    </li>
+    {{- end}}
+  </ul>
+  {{- else -}}
+  <p class="time-panel__empty">まだ記録がありません</p>
+  {{- end}}
+  <form class="time-panel__add" hx-post="/tasks/{{.TaskID}}/time-entries">
+    <label for="minutes-{{.TaskID}}">今までの作業時間を追加（分）</label>
+    <div class="time-panel__row">
+      <input id="minutes-{{.TaskID}}" name="minutes" value="{{.Minutes}}" type="number" min="1" max="1440"
+             inputmode="numeric" required {{if .Errors}}aria-invalid="true" aria-describedby="minutes-{{.TaskID}}-error"{{end}}>
+      <button type="submit" class="button button--primary">追加</button>
+      <button type="button" class="button button--ghost" hx-get="/board">閉じる</button>
+    </div>
+    {{with .Errors}}<div id="minutes-{{$.TaskID}}-error">{{range .}}<p class="field__error">{{.}}</p>{{end}}</div>{{end}}
+  </form>
+</section>
 {{- end}}
 
 {{define "edit-card" -}}

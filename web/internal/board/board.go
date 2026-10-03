@@ -82,6 +82,8 @@ var funcs = template.FuncMap{
 	"statusLabel": func(s taskclient.Status) string { return statusLabels[s] },
 	"actions":     actionsFor,
 	"minutes":     formatMinutes,
+	"duration":    formatDuration,
+	"clock":       formatClock,
 	"jst":         formatJST,
 }
 
@@ -116,6 +118,12 @@ type boardView struct {
 	NewForm   formView
 	EditingID int64
 	Edit      formView
+	// TimeOpenID は時間記録のパネルを開いているタスク（0 なら閉じている）。
+	TimeOpenID int64
+	TimePanel  timePanel
+	// EstimatedMin / ActualSec はボード全体の目標時間（分）と実績時間（秒）の合計。
+	EstimatedMin int
+	ActualSec    int64
 	// LoadError はボードを読み込めなかったとき（API 停止中など）に表示するメッセージ。
 	LoadError string
 }
@@ -147,6 +155,11 @@ func NewHandler(api *taskclient.Client, logger *slog.Logger) (*Handler, error) {
 	h.mux.HandleFunc("GET /tasks/{id}/edit", h.edit)
 	h.mux.HandleFunc("PUT /tasks/{id}", h.update)
 	h.mux.HandleFunc("DELETE /tasks/{id}", h.delete)
+	h.mux.HandleFunc("POST /tasks/{id}/timer/start", h.startTimer)
+	h.mux.HandleFunc("POST /tasks/{id}/timer/stop", h.stopTimer)
+	h.mux.HandleFunc("GET /tasks/{id}/time", h.showTime)
+	h.mux.HandleFunc("POST /tasks/{id}/time-entries", h.addTime)
+	h.mux.HandleFunc("DELETE /tasks/{id}/time-entries/{entryID}", h.deleteTime)
 	h.mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(static)))
 	return h, nil
 }
@@ -276,6 +289,10 @@ func (h *Handler) loadBoard(r *http.Request, view boardView) (boardView, error) 
 		if t.Status == taskclient.StatusDone {
 			view.Done++
 		}
+		if t.EstimatedMin != nil {
+			view.EstimatedMin += *t.EstimatedMin
+		}
+		view.ActualSec += t.ActualSec
 	}
 	// 完了列は直近に完了したものを上に出す（他の列は作成順）。
 	// 完了日時は秒精度なので、同じ秒なら後から作ったものを上にする。
@@ -345,6 +362,8 @@ func statusFor(err error) int {
 		return http.StatusBadRequest
 	case errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusUnauthorized:
 		return http.StatusBadGateway // web の設定（WEB_API_KEY）の問題なので、利用者の操作の誤りではない
+	case errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusConflict:
+		return http.StatusConflict // タイマーの二重起動など。API のメッセージをそのまま見せる
 	default:
 		return http.StatusInternalServerError
 	}
@@ -355,13 +374,17 @@ func userMessage(err error) string {
 	var apiErr *taskclient.APIError
 	switch {
 	case errors.Is(err, taskclient.ErrNotFound):
-		return "タスクが見つかりません。画面を再読み込みしてください。"
+		// 時間記録が見つからない場合など、API が詳しいメッセージを返していればそれを使う。
+		msg := strings.TrimPrefix(err.Error(), taskclient.ErrNotFound.Error()+": ")
+		return msg + "。画面を再読み込みしてください。"
 	case errors.Is(err, taskclient.ErrUnavailable):
 		return "API サーバーに接続できません。make status で api が起動しているか確認してください。"
 	case isValidation(err):
 		return err.Error()
 	case errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusUnauthorized:
 		return "API キーが一致しません。WEB_API_KEY と API_KEY の設定を確認してください。"
+	case errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusConflict:
+		return apiErr.Message
 	default:
 		return "サーバー内部でエラーが発生しました"
 	}
