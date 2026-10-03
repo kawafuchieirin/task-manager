@@ -250,22 +250,24 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 
 // loadBoard は最新のタスクと進捗を view に詰める。フォームの状態は呼び出し元が設定する。
 func (h *Handler) loadBoard(r *http.Request, view boardView) (boardView, error) {
+	// 進捗は同じ一覧から数える。別クエリにすると、間に API から書き込まれたとき列の件数とずれる。
 	tasks, err := h.svc.List(r.Context(), nil)
 	if err != nil {
 		return boardView{}, err
 	}
-	sum, err := h.svc.Summary(r.Context())
-	if err != nil {
-		return boardView{}, err
-	}
+	sum := task.Summary{Total: len(tasks)}
 
 	byStatus := make(map[task.Status][]task.Task, len(task.Statuses))
 	for _, t := range tasks {
 		byStatus[t.Status] = append(byStatus[t.Status], t)
+		if t.Status == task.StatusDone {
+			sum.Done++
+		}
 	}
 	// 完了列は直近に完了したものを上に出す（他の列は作成順）。
-	slices.SortStableFunc(byStatus[task.StatusDone], func(a, b task.Task) int {
-		return cmp.Compare(completedUnix(b), completedUnix(a))
+	// 完了日時は秒精度なので、同じ秒なら後から作ったものを上にする。
+	slices.SortFunc(byStatus[task.StatusDone], func(a, b task.Task) int {
+		return cmp.Or(cmp.Compare(completedUnix(b), completedUnix(a)), cmp.Compare(b.ID, a.ID))
 	})
 
 	view.Columns = make([]columnView, len(task.Statuses))
@@ -305,15 +307,16 @@ func (h *Handler) render(w http.ResponseWriter, r *http.Request, status int, nam
 	_, _ = buf.WriteTo(w) // ヘッダー送信後は失敗してもクライアントに伝える手段がない
 }
 
-// mutationError は存在しないタスクへの操作を 404、それ以外を 500 として返す。
+// mutationError は存在しないタスクへの操作を 404、不正な入力を 400、それ以外を 500 として返す。
 // 画面では htmx:responseError を受けてメッセージを表示する（static/app.js）。
+// 422 は htmx がボードを差し替えるフォーム再描画専用なので、ここでは使わない。
 func (h *Handler) mutationError(w http.ResponseWriter, r *http.Request, err error) {
 	if errors.Is(err, task.ErrNotFound) {
 		http.Error(w, "タスクが見つかりません。画面を再読み込みしてください。", http.StatusNotFound)
 		return
 	}
 	if _, ok := asValidation(err); ok {
-		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	h.serverError(w, r, err)
@@ -333,10 +336,12 @@ func (h *Handler) pathID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 	return id, true
 }
 
+// formFromRequest はフォームの入力値を読み取る。
+// textarea の改行は CRLF で送られるので LF に揃え、ブラウザの maxlength と文字数の数え方を一致させる。
 func formFromRequest(r *http.Request) formView {
 	return formView{
 		Title:        r.FormValue("title"),
-		Description:  r.FormValue("description"),
+		Description:  strings.ReplaceAll(r.FormValue("description"), "\r\n", "\n"),
 		EstimatedMin: strings.TrimSpace(r.FormValue("estimated_min")),
 	}
 }

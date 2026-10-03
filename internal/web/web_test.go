@@ -186,7 +186,8 @@ func TestChangeStatus_Errors(t *testing.T) {
 
 	assertStatus(t, send(t, h, http.MethodPost, "/tasks/999/status", url.Values{"status": {"done"}}), http.StatusNotFound)
 	assertStatus(t, send(t, h, http.MethodPost, "/tasks/abc/status", url.Values{"status": {"done"}}), http.StatusNotFound)
-	assertStatus(t, send(t, h, http.MethodPost, "/tasks/1/status", url.Values{"status": {"archived"}}), http.StatusUnprocessableEntity)
+	// 422 にすると htmx がボードを平文で置き換えてしまうため 400 で返す。
+	assertStatus(t, send(t, h, http.MethodPost, "/tasks/1/status", url.Values{"status": {"archived"}}), http.StatusBadRequest)
 }
 
 func TestEditAndUpdate(t *testing.T) {
@@ -265,6 +266,64 @@ func TestDoneColumnOrderedByCompletedAtDesc(t *testing.T) {
 	if strings.Index(body, "後で完了") > strings.Index(body, "先に完了") {
 		t.Error("完了列は直近に完了したものが上に来るはず")
 	}
+}
+
+func TestDoneColumn_SameSecondShowsNewerFirst(t *testing.T) {
+	now := time.Date(2026, 10, 3, 9, 0, 0, 0, time.UTC)
+	svc := task.NewService(dbtest.New(t), task.WithClock(func() time.Time { return now }))
+	h, err := NewHandler(svc, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustCreate(t, svc, task.CreateInput{Title: "古いタスク", Status: task.StatusDone})
+	mustCreate(t, svc, task.CreateInput{Title: "新しいタスク", Status: task.StatusDone})
+
+	body := send(t, h, http.MethodGet, "/board", nil).Body.String()
+	if strings.Index(body, "新しいタスク") > strings.Index(body, "古いタスク") {
+		t.Error("同じ秒に完了した場合は後から作ったものが上に来るはず")
+	}
+}
+
+func TestCreate_NormalizesCRLF(t *testing.T) {
+	h, svc := newTestHandler(t)
+	// 1000行 = LF なら 1999 文字で上限内、CRLF のままだと 2998 文字で上限超過になる。
+	desc := strings.Repeat("a\r\n", 999) + "a"
+	rec := send(t, h, http.MethodPost, "/tasks", url.Values{"title": {"t"}, "description": {desc}})
+	assertStatus(t, rec, http.StatusOK)
+
+	got, err := svc.Get(context.Background(), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(got.Description, "\r") {
+		t.Error("CRLF が LF に揃えられていない")
+	}
+}
+
+func TestEdit_DoneTaskKeepsStatus(t *testing.T) {
+	h, svc := newTestHandler(t)
+	created := mustCreate(t, svc, task.CreateInput{Title: "before", Status: task.StatusDone})
+
+	assertStatus(t, send(t, h, http.MethodPut, "/tasks/1", url.Values{"title": {"after"}}), http.StatusOK)
+
+	got, _ := svc.Get(context.Background(), created.ID)
+	if got.Status != task.StatusDone || got.CompletedAt == nil || !got.CompletedAt.Equal(*created.CompletedAt) {
+		t.Errorf("完了済みタスクを編集してもステータスと完了日時は変わらないはず: %+v", got)
+	}
+}
+
+func TestEscapesAttributes(t *testing.T) {
+	h, svc := newTestHandler(t)
+	evil := `x" onmouseover="alert(1)' &amp; <b>`
+	mustCreate(t, svc, task.CreateInput{Title: evil})
+
+	body := send(t, h, http.MethodGet, "/", nil).Body.String()
+	for _, raw := range []string{`" onmouseover="`, `<b>`} {
+		if strings.Contains(body, raw) {
+			t.Errorf("属性・本文から %q が抜け出している", raw)
+		}
+	}
+	assertContains(t, body, `hx-confirm="「x&#34; onmouseover=&#34;alert(1)&#39; &amp;amp; &lt;b&gt;」を削除しますか？"`)
 }
 
 func TestStatic(t *testing.T) {
