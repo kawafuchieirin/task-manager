@@ -273,21 +273,21 @@ func (s *Service) DeleteTimeEntry(ctx context.Context, id int64) error {
 func validateEntry(start, end, now time.Time) error {
 	v := &validator{}
 	if start.IsZero() {
-		v.add("started_at", "開始時刻を指定してください")
+		v.add("started_at", CodeRequired, "開始時刻を指定してください")
 	}
 	if end.IsZero() {
-		v.add("ended_at", "終了時刻を指定してください")
+		v.add("ended_at", CodeRequired, "終了時刻を指定してください")
 	}
 	if !start.IsZero() && !end.IsZero() {
 		switch {
 		case !end.After(start):
-			v.add("ended_at", "終了時刻は開始時刻より後にしてください")
+			v.add("ended_at", CodeNotAfterStart, "終了時刻は開始時刻より後にしてください")
 		case end.Sub(start) > MaxEntryDuration:
-			v.add("ended_at", "1つの区間は24時間以内にしてください")
+			v.add("ended_at", CodeTooLong, "1つの区間は24時間以内にしてください")
 		}
 	}
 	if end.After(now) {
-		v.add("ended_at", "未来の時刻は記録できません")
+		v.add("ended_at", CodeInFuture, "未来の時刻は記録できません")
 	}
 	return v.err()
 }

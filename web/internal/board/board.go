@@ -29,31 +29,6 @@ var staticFS embed.FS
 // jst は画面表示用のタイムゾーン。日本は夏時間が無いので固定オフセットで十分。
 var jst = time.FixedZone("JST", 9*60*60)
 
-var statusLabels = map[taskclient.Status]string{
-	taskclient.StatusTodo:  "未着手",
-	taskclient.StatusDoing: "進行中",
-	taskclient.StatusDone:  "完了",
-}
-
-// action はカードに表示するステータス変更ボタン。
-type action struct {
-	Label string
-	To    taskclient.Status
-}
-
-// actionsFor はステータスごとに表示する遷移ボタンを返す。完了からは進行中に戻せる。
-func actionsFor(s taskclient.Status) []action {
-	switch s {
-	case taskclient.StatusTodo:
-		return []action{{"着手する", taskclient.StatusDoing}, {"完了にする", taskclient.StatusDone}}
-	case taskclient.StatusDoing:
-		return []action{{"未着手に戻す", taskclient.StatusTodo}, {"完了にする", taskclient.StatusDone}}
-	case taskclient.StatusDone:
-		return []action{{"未完了に戻す", taskclient.StatusDoing}}
-	}
-	return nil
-}
-
 func formatMinutes(m int) string {
 	h, min := m/60, m%60
 	switch {
@@ -101,7 +76,12 @@ func (f formView) Error(field string) string {
 	if f.Errors == nil {
 		return ""
 	}
-	return f.Errors.Message(field)
+	for _, fe := range f.Errors.Errors {
+		if fe.Field == field {
+			return fieldMessage(fe)
+		}
+	}
+	return ""
 }
 
 type columnView struct {
@@ -126,6 +106,12 @@ type boardView struct {
 	ActualSec    int64
 	// LoadError はボードを読み込めなかったとき（API 停止中など）に表示するメッセージ。
 	LoadError string
+	// Message は操作が成功したときにメッセージウィンドウに出す文言（htmx の out-of-band で差し替える）。
+	Message string
+	// noticeFormat / noticeTaskID は、タスク名を入れた Message をボードの読み込み後に組み立てるためのもの。
+	// タイマー操作の応答にはタスク名が無いので、読み込んだ一覧から名前を引く。
+	noticeFormat string
+	noticeTaskID int64
 }
 
 // Handler は画面のリクエストを処理する。
@@ -185,9 +171,10 @@ func (h *Handler) board(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	form := formFromRequest(r)
+	var created taskclient.Task
 	estimated, err := parseEstimated(form.EstimatedMin)
 	if err == nil {
-		_, err = h.api.Create(r.Context(), taskclient.CreateInput{
+		created, err = h.api.Create(r.Context(), taskclient.CreateInput{
 			Title:        form.Title,
 			Description:  form.Description,
 			EstimatedMin: estimated,
@@ -202,7 +189,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		h.mutationError(w, r, err)
 		return
 	}
-	h.renderBoard(w, r, http.StatusOK, boardView{})
+	h.renderBoard(w, r, http.StatusOK, boardView{Message: fmt.Sprintf(msgCreated, created.Title)})
 }
 
 func (h *Handler) changeStatus(w http.ResponseWriter, r *http.Request) {
@@ -211,11 +198,17 @@ func (h *Handler) changeStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	status := taskclient.Status(r.FormValue("status"))
-	if _, err := h.api.Update(r.Context(), id, taskclient.UpdateInput{Status: &status}); err != nil {
+	updated, err := h.api.Update(r.Context(), id, taskclient.UpdateInput{Status: &status})
+	if err != nil {
 		h.mutationError(w, r, err)
 		return
 	}
-	h.renderBoard(w, r, http.StatusOK, boardView{})
+	// from は押したボタンが置かれていた列（メッセージの選び分けにだけ使う）。
+	view := boardView{}
+	if format := statusNotice(taskclient.Status(r.FormValue("from")), updated.Status); format != "" {
+		view.Message = fmt.Sprintf(format, updated.Title)
+	}
+	h.renderBoard(w, r, http.StatusOK, view)
 }
 
 func (h *Handler) edit(w http.ResponseWriter, r *http.Request) {
@@ -272,7 +265,7 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 		h.mutationError(w, r, err)
 		return
 	}
-	h.renderBoard(w, r, http.StatusOK, boardView{})
+	h.renderBoard(w, r, http.StatusOK, boardView{Message: msgDeleted})
 }
 
 // loadBoard は最新のタスクと進捗を view に詰める。フォームの状態は呼び出し元が設定する。
@@ -306,6 +299,13 @@ func (h *Handler) loadBoard(r *http.Request, view boardView) (boardView, error) 
 	}
 	view.Total = len(tasks)
 	view.Percent = progressPercent(view.Done, view.Total)
+	if view.noticeFormat != "" {
+		for _, t := range tasks {
+			if t.ID == view.noticeTaskID {
+				view.Message = fmt.Sprintf(view.noticeFormat, t.Title)
+			}
+		}
+	}
 	return view, nil
 }
 
@@ -369,27 +369,6 @@ func statusFor(err error) int {
 	}
 }
 
-// userMessage は画面に表示するメッセージを返す。内部の詳細はログにだけ出す。
-func userMessage(err error) string {
-	var apiErr *taskclient.APIError
-	switch {
-	case errors.Is(err, taskclient.ErrNotFound):
-		// 時間記録が見つからない場合など、API が詳しいメッセージを返していればそれを使う。
-		msg := strings.TrimPrefix(err.Error(), taskclient.ErrNotFound.Error()+": ")
-		return msg + "。画面を再読み込みしてください。"
-	case errors.Is(err, taskclient.ErrUnavailable):
-		return "API サーバーに接続できません。make status で api が起動しているか確認してください。"
-	case isValidation(err):
-		return err.Error()
-	case errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusUnauthorized:
-		return "API キーが一致しません。WEB_API_KEY と API_KEY の設定を確認してください。"
-	case errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusConflict:
-		return apiErr.Message
-	default:
-		return "サーバー内部でエラーが発生しました"
-	}
-}
-
 func (h *Handler) pathID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil || id <= 0 {
@@ -418,7 +397,7 @@ func parseEstimated(s string) (*int, error) {
 	m, err := strconv.Atoi(s)
 	if err != nil {
 		return nil, &taskclient.ValidationError{Errors: []taskclient.FieldError{
-			{Field: "estimated_min", Message: "目標時間は整数（分）で入力してください"},
+			{Field: "estimated_min", Code: codeNotInteger},
 		}}
 	}
 	return &m, nil

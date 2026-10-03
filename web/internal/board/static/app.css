@@ -92,11 +92,11 @@ body {
 
 .field { display: grid; gap: 4px; }
 .field--grow { flex: 1 1 240px; }
-.field--narrow { flex: 0 1 120px; }
+.field--narrow { flex: 0 1 160px; }
 .field--full { flex: 1 1 100%; order: 3; }
-.field label { font-size: 0.85rem; color: var(--muted); }
+.field label { font-size: 0.85rem; color: var(--muted); white-space: nowrap; }
 .field__error { margin: 0; font-size: 0.85rem; color: var(--danger); }
-.field__error::before { content: "＊ "; }
+.field__error::before { content: "＊ "; content: "＊ " / ""; }
 
 input, textarea {
   width: 100%;
@@ -123,8 +123,10 @@ input:focus-visible, textarea:focus-visible { outline: none; border-color: var(-
   text-decoration: none;
   cursor: pointer;
 }
+/* 飾りの記号は読み上げやボタンのアクセシブルな名前に含めないよう、代替テキストを空にする（content: "…" / ""） */
 .button::before {
   content: "▶";
+  content: "▶" / "";
   position: absolute;
   left: 2px;
   visibility: hidden;
@@ -163,7 +165,7 @@ input:focus-visible, textarea:focus-visible { outline: none; border-color: var(-
   font-weight: normal;
 }
 .column__count { color: var(--accent); }
-.column__count::before { content: "×"; color: var(--muted); }
+.column__count::before { content: "×"; content: "×" / ""; color: var(--muted); }
 
 .cards { display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; }
 .cards__empty { padding: 16px 0; text-align: center; color: var(--muted); font-size: 0.9rem; }
@@ -225,8 +227,10 @@ input:focus-visible, textarea:focus-visible { outline: none; border-color: var(-
   cursor: pointer;
 }
 .flash[hidden] { display: none; }
+.flash::before { content: "＊ "; content: "＊ " / ""; }
 .flash::after {
   content: "▼";
+  content: "▼" / "";
   position: absolute;
   right: 14px;
   bottom: 6px;

@@ -66,8 +66,8 @@ func TestIndex(t *testing.T) {
 		t.Errorf("Content-Type = %q", ct)
 	}
 	assertContains(t, rec.Body.String(),
-		"<!doctype html>", `/static/htmx.min.js`, "未着手", "進行中", "完了",
-		"Go を学ぶ", "目標 1時間30分", `aria-valuenow="0"`)
+		"<!doctype html>", `/static/htmx.min.js`, "みちゃくしゅ", "しんこうちゅう", "クリア",
+		"Go を学ぶ", "もくひょう 1時間30分", `aria-valuenow="0"`)
 }
 
 func TestIndex_APIUnavailable(t *testing.T) {
@@ -78,7 +78,7 @@ func TestIndex_APIUnavailable(t *testing.T) {
 	assertStatus(t, rec, http.StatusBadGateway)
 	body := rec.Body.String()
 	// API が止まっていても、エラーを表示したページは返す。
-	assertContains(t, body, "<!doctype html>", "API サーバーに接続できません", "make status")
+	assertContains(t, body, "<!doctype html>", "API サーバーと つうしん できない！", "make status")
 	if strings.Contains(body, `id="board"`) {
 		t.Error("API に接続できないときはボードを表示しないはず")
 	}
@@ -110,7 +110,7 @@ func TestEscapesAttributes(t *testing.T) {
 			t.Errorf("属性・本文から %q が抜け出している", raw)
 		}
 	}
-	assertContains(t, body, `hx-confirm="「x&#34; onmouseover=&#34;alert(1)&#39; &amp;amp; &lt;b&gt;」を削除しますか？"`)
+	assertContains(t, body, `hx-confirm="「x&#34; onmouseover=&#34;alert(1)&#39; &amp;amp; &lt;b&gt;」を すてますか？"`)
 }
 
 func TestCreate(t *testing.T) {
@@ -122,7 +122,7 @@ func TestCreate(t *testing.T) {
 	if strings.Contains(body, "<!doctype html>") {
 		t.Error("htmx 用にはボードの断片だけを返すはず")
 	}
-	assertContains(t, body, `id="board"`, "新しいタスク", "目標 30分")
+	assertContains(t, body, `id="board"`, "新しいタスク", "もくひょう 30分")
 
 	got, ok := api.get(1)
 	if !ok || got.EstimatedMin == nil || *got.EstimatedMin != 30 {
@@ -136,9 +136,9 @@ func TestCreate_ValidationKeepsInput(t *testing.T) {
 		form    url.Values
 		wantMsg string
 	}{
-		{"API の検証エラー（タイトルが空）", url.Values{"title": {""}, "description": {"残したい説明"}}, "タイトルを入力してください"},
+		{"API の検証エラー（タイトルが空）", url.Values{"title": {""}, "description": {"残したい説明"}}, "タスクの なまえを いれてください。"},
 		{"目標時間が数値でない", url.Values{"title": {"t"}, "description": {"残したい説明"}, "estimated_min": {"abc"}},
-			"目標時間は整数（分）で入力してください"},
+			"もくひょうは ふんを すうじで いれてください。"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -178,7 +178,7 @@ func TestChangeStatus_DoneShowsStrikethroughAndProgress(t *testing.T) {
 	if !regexp.MustCompile(`class="card card--done" id="task-` + strconv.FormatInt(a.ID, 10) + `"`).MatchString(body) {
 		t.Error("完了したタスクに card--done クラスが付いていない")
 	}
-	assertContains(t, body, `aria-valuenow="50"`, "<strong>50%</strong>", "完了 ", "未完了に戻す")
+	assertContains(t, body, `aria-valuenow="50"`, "<strong>50%</strong>", "クリア 10/3", "やりなおす")
 
 	if got, _ := api.get(a.ID); got.Status != taskclient.StatusDone {
 		t.Errorf("Status = %q", got.Status)
@@ -217,7 +217,7 @@ func TestMutation_APIUnavailable(t *testing.T) {
 
 	rec := send(t, h, http.MethodPost, "/tasks/1/status", url.Values{"status": {"done"}})
 	assertStatus(t, rec, http.StatusBadGateway)
-	assertContains(t, rec.Body.String(), "API サーバーに接続できません")
+	assertContains(t, rec.Body.String(), "API サーバーと つうしん できない！")
 }
 
 func TestEditAndUpdate(t *testing.T) {
@@ -258,7 +258,7 @@ func TestUpdate_ValidationKeepsEditing(t *testing.T) {
 
 	rec := send(t, h, http.MethodPut, "/tasks/1", url.Values{"title": {""}, "description": {"編集中の説明"}})
 	assertStatus(t, rec, http.StatusUnprocessableEntity)
-	assertContains(t, rec.Body.String(), `hx-put="/tasks/1"`, "タイトルを入力してください", "編集中の説明")
+	assertContains(t, rec.Body.String(), `hx-put="/tasks/1"`, "タスクの なまえを いれてください。", "編集中の説明")
 
 	if got, _ := api.get(1); got.Title != "before" {
 		t.Errorf("検証エラーなのに更新された: %q", got.Title)
@@ -280,7 +280,7 @@ func TestDelete(t *testing.T) {
 	if strings.Contains(rec.Body.String(), "消すタスク") {
 		t.Error("削除したタスクが表示されている")
 	}
-	assertContains(t, rec.Body.String(), "タスクはありません", "（0 / 0 件完了）")
+	assertContains(t, rec.Body.String(), "タスクは ない ようだ。", "（0こ のうち 0こ クリア）")
 	assertStatus(t, send(t, h, http.MethodDelete, "/tasks/1", nil), http.StatusNotFound)
 }
 

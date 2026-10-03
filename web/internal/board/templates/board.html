@@ -2,37 +2,37 @@
 <section id="board" class="board" hx-target="this" hx-swap="outerHTML">
   <div class="progress">
     <div class="progress__label">
-      <span>進捗</span>
-      <span><strong>{{.Percent}}%</strong>（{{.Done}} / {{.Total}} 件完了）</span>
+      <span>しんちょく</span>
+      <span><strong>{{.Percent}}%</strong>（{{.Total}}こ のうち {{.Done}}こ クリア）</span>
     </div>
-    <div class="progress__track" role="progressbar" aria-label="完了したタスクの割合"
+    <div class="progress__track" role="progressbar" aria-label="クリアした タスクの わりあい"
          aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{.Percent}}">
       <div class="progress__fill" style="width: {{.Percent}}%"></div>
     </div>
-    <p class="progress__time">目標合計 {{minutes .EstimatedMin}} ／ 実績合計 {{duration .ActualSec}}</p>
+    <p class="progress__time">もくひょう ごうけい {{minutes .EstimatedMin}} ／ じっせき ごうけい {{duration .ActualSec}}</p>
   </div>
 
   {{with .NewForm -}}
   <form class="new-task" hx-post="/tasks">
     <div class="field field--grow">
-      <label for="new-title">タイトル</label>
+      <label for="new-title">タスクの なまえ</label>
       <input id="new-title" name="title" value="{{.Title}}" maxlength="100" required autocomplete="off"
              {{with .Error "title"}}aria-invalid="true" aria-describedby="new-title-error"{{end}}>
       {{with .Error "title"}}<p id="new-title-error" class="field__error">{{.}}</p>{{end}}
     </div>
     <div class="field field--narrow">
-      <label for="new-estimated">目標（分）</label>
+      <label for="new-estimated">もくひょう（ふん）</label>
       <input id="new-estimated" name="estimated_min" value="{{.EstimatedMin}}" inputmode="numeric" type="number" min="0"
              {{with .Error "estimated_min"}}aria-invalid="true" aria-describedby="new-estimated-error"{{end}}>
       {{with .Error "estimated_min"}}<p id="new-estimated-error" class="field__error">{{.}}</p>{{end}}
     </div>
     <div class="field field--full">
-      <label for="new-description">説明（任意）</label>
+      <label for="new-description">せつめい（なくても よい）</label>
       <textarea id="new-description" name="description" rows="2" maxlength="2000"
                 {{with .Error "description"}}aria-invalid="true"{{end}}>{{.Description}}</textarea>
       {{with .Error "description"}}<p class="field__error">{{.}}</p>{{end}}
     </div>
-    <button type="submit" class="button button--primary">追加</button>
+    <button type="submit" class="button button--primary">ついか</button>
   </form>
   {{- end}}
 
@@ -44,13 +44,16 @@
         {{range .Tasks -}}
           {{if eq .ID $.EditingID}}{{template "edit-card" $.Edit}}{{else}}{{template "card" ($.Card .)}}{{end}}
         {{- else -}}
-        <li class="cards__empty">タスクはありません</li>
+        <li class="cards__empty">タスクは ない ようだ。</li>
         {{- end}}
       </ul>
     </section>
     {{- end}}
   </div>
 </section>
+{{- with .Message}}
+<div id="flash" class="flash flash--info" role="status" title="クリックで とじる" hx-swap-oob="true">{{.}}</div>
+{{- end}}
 {{- end}}
 
 {{define "card" -}}
@@ -58,40 +61,40 @@
   <p class="card__title">{{.Title}}</p>
   {{with .Description}}<p class="card__description">{{.}}</p>{{end}}
   {{with .CompletedAt -}}
-  <p class="card__meta"><span>完了 {{jst .}}</span></p>
+  <p class="card__meta"><span>クリア {{jst .}}</span></p>
   {{- end}}
   <p class="card__time{{if .Over}} card__time--over{{end}}">
-    {{with .EstimatedMin}}<span>目標 {{minutes .}}</span>{{end}}
-    <span>実績 {{.ActualText}}</span>
+    {{with .EstimatedMin}}<span>もくひょう {{minutes .}}</span>{{end}}
+    <span>じっせき {{.ActualText}}</span>
     {{with .DiffText}}<span class="card__diff">{{.}}</span>{{end}}
   </p>
   {{if .Running -}}
   <p class="card__timer" role="timer" aria-live="off">
-    <span class="card__timer-dot" aria-hidden="true"></span>計測中
+    <span class="card__timer-dot" aria-hidden="true"></span>けいそくちゅう
     <span class="card__timer-clock" data-elapsed="{{.ActualSec}}">{{clock .ActualSec}}</span>
   </p>
   {{- end}}
   <div class="card__actions">
     {{if .Running -}}
-    <button type="button" class="button button--timer-stop" hx-post="/tasks/{{.ID}}/timer/stop">停止</button>
+    <button type="button" class="button button--timer-stop" hx-post="/tasks/{{.ID}}/timer/stop">ていし</button>
     {{- else if .CanStartTimer -}}
-    <button type="button" class="button button--timer" hx-post="/tasks/{{.ID}}/timer/start">開始</button>
+    <button type="button" class="button button--timer" hx-post="/tasks/{{.ID}}/timer/start">かいし</button>
     {{- end}}
     {{range actions .Status -}}
-    <button type="button" class="button" hx-post="/tasks/{{$.ID}}/status" hx-vals='{"status": "{{.To}}"}'>{{.Label}}</button>
+    <button type="button" class="button" hx-post="/tasks/{{$.ID}}/status" hx-vals='{"status": "{{.To}}", "from": "{{$.Status}}"}'>{{.Label}}</button>
     {{- end}}
     <button type="button" class="button button--ghost" hx-get="/tasks/{{.ID}}/time"
-            {{if .Panel}}aria-expanded="true"{{else}}aria-expanded="false"{{end}}>時間の記録</button>
-    <button type="button" class="button button--ghost" hx-get="/tasks/{{.ID}}/edit">編集</button>
+            {{if .Panel}}aria-expanded="true"{{else}}aria-expanded="false"{{end}}>じかんの きろく</button>
+    <button type="button" class="button button--ghost" hx-get="/tasks/{{.ID}}/edit">へんしゅう</button>
     <button type="button" class="button button--danger" hx-delete="/tasks/{{.ID}}"
-            hx-confirm="「{{.Title}}」を削除しますか？">削除</button>
+            hx-confirm="「{{.Title}}」を すてますか？">すてる</button>
   </div>
   {{with .Panel}}{{template "time-panel" .}}{{end}}
 </li>
 {{- end}}
 
 {{define "time-panel" -}}
-<section class="time-panel" aria-label="時間の記録">
+<section class="time-panel" aria-label="じかんの きろく">
   {{with .Entries -}}
   <ul class="time-panel__entries">
     {{range . -}}
@@ -100,20 +103,20 @@
       <span class="time-panel__duration">{{.Duration}}</span>
       <button type="button" class="button button--danger button--small"
               hx-delete="/tasks/{{.TaskID}}/time-entries/{{.ID}}"
-              hx-confirm="{{if .Running}}計測中のタイマーを取り消しますか？{{else}}この記録（{{.Range}}）を削除しますか？{{end}}">削除</button>
+              hx-confirm="{{if .Running}}けいそくちゅうの タイマーを とりけしますか？{{else}}この きろく（{{.Range}}）を すてますか？{{end}}">すてる</button>
     </li>
     {{- end}}
   </ul>
   {{- else -}}
-  <p class="time-panel__empty">まだ記録がありません</p>
+  <p class="time-panel__empty">まだ きろくが ない。</p>
   {{- end}}
   <form class="time-panel__add" hx-post="/tasks/{{.TaskID}}/time-entries">
-    <label for="minutes-{{.TaskID}}">今までの作業時間を追加（分）</label>
+    <label for="minutes-{{.TaskID}}">これまでの さぎょうじかんを ついか（ふん）</label>
     <div class="time-panel__row">
       <input id="minutes-{{.TaskID}}" name="minutes" value="{{.Minutes}}" type="number" min="1" max="1440"
              inputmode="numeric" required {{if .Errors}}aria-invalid="true" aria-describedby="minutes-{{.TaskID}}-error"{{end}}>
-      <button type="submit" class="button button--primary">追加</button>
-      <button type="button" class="button button--ghost" hx-get="/board">閉じる</button>
+      <button type="submit" class="button button--primary">ついか</button>
+      <button type="button" class="button button--ghost" hx-get="/board">とじる</button>
     </div>
     {{with .Errors}}<div id="minutes-{{$.TaskID}}-error">{{range .}}<p class="field__error">{{.}}</p>{{end}}</div>{{end}}
   </form>
@@ -124,26 +127,26 @@
 <li class="card card--editing" id="task-{{.ID}}">
   <form class="edit-task" hx-put="/tasks/{{.ID}}">
     <div class="field">
-      <label for="edit-title-{{.ID}}">タイトル</label>
+      <label for="edit-title-{{.ID}}">タスクの なまえ</label>
       <input id="edit-title-{{.ID}}" name="title" value="{{.Title}}" maxlength="100" required autocomplete="off"
              {{with .Error "title"}}aria-invalid="true"{{end}}>
       {{with .Error "title"}}<p class="field__error">{{.}}</p>{{end}}
     </div>
     <div class="field">
-      <label for="edit-estimated-{{.ID}}">目標（分）</label>
+      <label for="edit-estimated-{{.ID}}">もくひょう（ふん）</label>
       <input id="edit-estimated-{{.ID}}" name="estimated_min" value="{{.EstimatedMin}}" inputmode="numeric" type="number" min="0"
              {{with .Error "estimated_min"}}aria-invalid="true"{{end}}>
       {{with .Error "estimated_min"}}<p class="field__error">{{.}}</p>{{end}}
     </div>
     <div class="field">
-      <label for="edit-description-{{.ID}}">説明</label>
+      <label for="edit-description-{{.ID}}">せつめい</label>
       <textarea id="edit-description-{{.ID}}" name="description" rows="3" maxlength="2000"
                 {{with .Error "description"}}aria-invalid="true"{{end}}>{{.Description}}</textarea>
       {{with .Error "description"}}<p class="field__error">{{.}}</p>{{end}}
     </div>
     <div class="card__actions">
-      <button type="submit" class="button button--primary">保存</button>
-      <button type="button" class="button button--ghost" hx-get="/board">キャンセル</button>
+      <button type="submit" class="button button--primary">これで よい</button>
+      <button type="button" class="button button--ghost" hx-get="/board">やめる</button>
     </div>
   </form>
 </li>

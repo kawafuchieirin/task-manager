@@ -206,7 +206,7 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewDecoder(r.Body).Decode(&in)
 		if strings.TrimSpace(in.Title) == "" {
 			writeAPIError(w, http.StatusUnprocessableEntity, "validation_failed", "入力値が不正です",
-				[]taskclient.FieldError{{Field: "title", Message: "タイトルを入力してください"}})
+				[]taskclient.FieldError{{Field: "title", Code: "required", Message: "タイトルを入力してください"}})
 			return
 		}
 		t := taskclient.Task{ID: f.nextID, Title: strings.TrimSpace(in.Title), Description: in.Description,
@@ -253,7 +253,7 @@ func (f *fakeAPI) patch(w http.ResponseWriter, r *http.Request, i int) {
 		t.Title = strings.TrimSpace(t.Title)
 		if t.Title == "" {
 			writeAPIError(w, http.StatusUnprocessableEntity, "validation_failed", "入力値が不正です",
-				[]taskclient.FieldError{{Field: "title", Message: "タイトルを入力してください"}})
+				[]taskclient.FieldError{{Field: "title", Code: "required", Message: "タイトルを入力してください"}})
 			return
 		}
 	}
@@ -269,7 +269,7 @@ func (f *fakeAPI) patch(w http.ResponseWriter, r *http.Request, i int) {
 		_ = json.Unmarshal(raw, &s)
 		if s != taskclient.StatusTodo && s != taskclient.StatusDoing && s != taskclient.StatusDone {
 			writeAPIError(w, http.StatusUnprocessableEntity, "validation_failed", "入力値が不正です",
-				[]taskclient.FieldError{{Field: "status", Message: "ステータスは todo / doing / done のいずれかを指定してください"}})
+				[]taskclient.FieldError{{Field: "status", Code: "invalid", Message: "ステータスは todo / doing / done のいずれかを指定してください"}})
 			return
 		}
 		switch {
