@@ -102,7 +102,8 @@ func isLoopback(host string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-// parseOrigins はカンマ区切りのオリジン一覧を検証し、scheme://host[:port] の形に揃えて返す。
+// parseOrigins はカンマ区切りのオリジン一覧を検証し、ブラウザが送る Origin ヘッダーと同じ形
+// （小文字の scheme://host、既定ポートは省略）に揃えて返す。揃えないと一致せず CORS が黙って効かない。
 func parseOrigins(key, raw string) ([]string, error) {
 	var origins []string
 	for _, item := range strings.Split(raw, ",") {
@@ -110,12 +111,19 @@ func parseOrigins(key, raw string) ([]string, error) {
 		if item == "" {
 			continue
 		}
-		u, err := url.Parse(item)
+		u, err := url.Parse(item) // スキームは url.Parse が小文字にする
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" ||
 			(u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" || u.User != nil {
 			return nil, fmt.Errorf("%s の %q は http(s)://host[:port] 形式で指定してください", key, item)
 		}
-		origins = append(origins, u.Scheme+"://"+u.Host)
+		host := strings.ToLower(u.Host)
+		if port := u.Port(); (u.Scheme == "http" && port == "80") || (u.Scheme == "https" && port == "443") {
+			host = strings.ToLower(u.Hostname())
+			if strings.Contains(host, ":") { // IPv6 は角括弧を戻す
+				host = "[" + host + "]"
+			}
+		}
+		origins = append(origins, u.Scheme+"://"+host)
 	}
 	return origins, nil
 }
