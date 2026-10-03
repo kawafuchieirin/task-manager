@@ -37,7 +37,8 @@ make start    # バックグラウンドで起動し、接続先を表示
 ブラウザで web の URL を開いてください。停止: make stop / ログ: make logs
 ```
 
-ブラウザで web の URL（既定は http://127.0.0.1:3000 ）を開くとボードが表示されます。api が止まっている場合、画面には「API サーバーに接続できません」と表示されます。
+ブラウザで web の URL（既定は http://127.0.0.1:3000 ）を開くとボードが表示されます。画面はレトロ RPG 風（ドット文字・黒地に白枠のウィンドウ・▶ カーソル）です。
+フォントは [DotGothic16](https://github.com/fontworks-fonts/DotGothic16)（SIL Open Font License 1.1、`web/internal/board/static/fonts/DotGothic16-OFL.txt`）を同梱しているので、オフラインでも同じ見た目になります。api が止まっている場合、画面には「API サーバーに接続できません」と表示されます。
 
 | コマンド | 内容 |
 |---|---|

@@ -44,3 +44,9 @@ document.addEventListener("DOMContentLoaded", tickTimers);
 document.addEventListener("htmx:afterSettle", tickTimers);
 // 1秒ごとだと表示が最大1秒近く遅れるため、短い間隔で確認して秒の切り替わりに追従する。
 setInterval(tickTimers, 250);
+
+// メッセージウィンドウはクリックで閉じる（RPG の「▼ で送る」操作に合わせる）。
+document.addEventListener("click", (event) => {
+  const flash = document.getElementById("flash");
+  if (flash && event.target === flash) flash.hidden = true;
+});
