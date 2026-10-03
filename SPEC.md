@@ -30,32 +30,35 @@
 
 ## 3. システム構成
 
-「抽出機能は API を別で切り出す」という方針に従い、**2つの独立したサービス**として構成する。
+画面アプリと API を分け、「抽出機能は API を別で切り出す」方針と合わせて、**3つの独立したサービス**として構成する（2026-10-03 変更）。
+画面アプリ（web）も「API を使う他のアプリ」の1つとして扱い、DB を持つのは api だけにする。
 
 ```
-┌──────────────┐        ┌───────────────────────────────┐
-│ ブラウザ      │─HTML──▶│ taskboard (:8080)             │
-│ (htmx)       │◀───────│  - 画面（ボード/進捗/キャラ）   │
-└──────────────┘        │  - Task API  /api/v1/...      │──▶ SQLite (data/taskboard.db)
-                        │                               │
-┌──────────────┐  JSON  │                               │
-│ 他のアプリ    │───────▶│                               │
-└──────────────┘        └──────────────┬────────────────┘
-       │                               │ HTTP（タイムアウト・リトライあり）
-       │ JSON                          ▼
-       └──────────────────────▶┌───────────────────────────────┐
-                               │ insight (:8081)               │
-                               │  - 抽出 API（ステートレス）     │
-                               └───────────────────────────────┘
+┌──────────────┐  HTML   ┌──────────────────────┐  HTTP/JSON  ┌──────────────────────┐
+│ ブラウザ      │────────▶│ web (:3000)          │────────────▶│ api (:8080)          │──▶ SQLite
+│ (htmx)       │◀────────│  画面（ボード/進捗/   │（タイムアウト・│  Task API /api/v1    │    (data/taskboard.db)
+└──────────────┘         │  キャラ）。DB なし    │  読み取りは   └──────────┬───────────┘
+                         └──────────────────────┘  リトライ）              │ HTTP（タイムアウト・リトライ）
+┌──────────────┐  HTTP/JSON                                               ▼
+│ 他のアプリ    │─────────────────────▶ api ／ insight         ┌──────────────────────┐
+└──────────────┘                                              │ insight (:8081)      │
+                                                              │  抽出 API（DB なし）   │
+                                                              └──────────────────────┘
 ```
 
-| サービス | 役割 | 状態 |
-|---|---|---|
-| `taskboard` | 画面の配信、タスク・時間・振り返りの管理 API | SQLite に永続化 |
-| `insight` | 振り返りテキストを受け取り「学んだこと / できなかったこと」を抽出して返す | ステートレス（DB を持たない） |
+| サービス | ディレクトリ | 役割 | 状態 |
+|---|---|---|---|
+| `api` | `api/` | タスク・時間・振り返りの管理 API | SQLite に永続化 |
+| `web` | `web/` | 画面の配信。データの読み書きはすべて api を呼ぶ | 持たない |
+| `insight` | `insight/` | 振り返りテキストを受け取り「学んだこと / できなかったこと」を抽出して返す | 持たない |
 
-- `insight` は taskboard に依存しないので、他のアプリから単体でも使える
-- taskboard から insight への呼び出しが失敗しても、タスク管理機能は動き続ける（抽出結果だけ「取得失敗」と表示する）
+- 各ディレクトリは独立した Go モジュールとし、`go.work` でまとめる。共通部品は `shared/` モジュールに置く
+- web は api の内部パッケージ（DB・サービス層）を import できない（Go の `internal` の制約）。境界は API の契約（JSON）だけになる
+- 入力値の検証は api に一本化し、web は api が返す 422 の内容をそのまま画面に表示する
+- web から api への呼び出しはタイムアウト 5 秒。読み取り（GET）だけ通信エラーと 502/503/504 で最大2回リトライする（書き込みは二重登録を避けるためリトライしない）
+- api が止まっていても web は落ちず、「API サーバーに接続できません」と表示する
+- `insight` は api / web に依存しないので、他のアプリから単体でも使える
+- api から insight への呼び出しが失敗しても、タスク管理機能は動き続ける（抽出結果だけ「取得失敗」と表示する）
 
 ## 4. 機能要件
 
@@ -90,7 +93,7 @@
 ### F5. 学んだこと・できなかったことの抽出（別 API）
 
 - タスクを完了するときに振り返りメモ（自由記述）を入力できる（任意）
-- taskboard は振り返りメモを insight API に送り、抽出結果を保存・表示する
+- api は振り返りメモを insight API に送り、抽出結果を保存する。web はそれを表示する
 - 振り返り一覧画面で、期間ごとの「学んだこと / できなかったこと」を一覧で表示する
 - 抽出の方式は**ルールベース**とする（2026-10-03 決定）。「学んだこと」「できなかったこと」の2つの入力欄、または `+` / `-` で始まる行で分類する
 - 将来 LLM による抽出を追加できるよう、抽出処理は `Extractor` インターフェースで差し替えられる設計にする（API の入出力は変えない）
@@ -109,7 +112,7 @@
 - エラーの形式を統一する: `{"error": {"code": "validation_failed", "message": "...", "details": [...]}}`
 - OpenAPI 3 の定義ファイル（`api/openapi.yaml`）を API 仕様の唯一の正とし、他のアプリはこれを参照して連携する
 
-### 5.1 Task API（taskboard :8080）
+### 5.1 Task API（api :8080）
 
 | メソッド | パス | 説明 |
 |---|---|---|
@@ -179,36 +182,49 @@ reflections
 
 | 区分 | 要件 |
 |---|---|
-| セキュリティ | 待ち受けアドレスはループバック（`127.0.0.1` / `::1` / `localhost`）に限定し、それ以外を設定すると起動しない（画面は認証なしのため、LAN に公開すると API キーを迂回できてしまう）。他のアプリ向けに任意で API キー認証（`TASKBOARD_API_KEY`、`/api/v1` のみ対象）を有効化できる。CORS で許可するオリジンは `TASKBOARD_CORS_ORIGINS` で設定する。ローカルのサーバーをブラウザ経由で操作されないよう、`Host` ヘッダーの検証（DNS リバインディング対策）と `http.CrossOriginProtection`（CSRF 対策）を全ルートに適用する。入力はすべてサーバー側で検証する |
+| セキュリティ | 待ち受けアドレスはループバック（`127.0.0.1` / `::1` / `localhost`）に限定し、それ以外を設定すると起動しない（画面は認証なしのため、LAN に公開すると API キーを迂回できてしまう）。他のアプリ向けに任意で API キー認証（`API_KEY`、`/api/v1` のみ対象）を有効化できる。web は `WEB_API_KEY` で同じキーを送る。CORS で許可するオリジンは `API_CORS_ORIGINS` で設定する。ローカルのサーバーをブラウザ経由で操作されないよう、`Host` ヘッダーの検証（DNS リバインディング対策）と `http.CrossOriginProtection`（CSRF 対策）、クリックジャッキング対策のヘッダーを全サービスの全ルートに適用する。入力はすべてサーバー側で検証する |
 | 信頼性 | insight の呼び出しはタイムアウト 5 秒、指数バックオフで最大2回リトライ。失敗時は `extract_status=failed` にして、画面から再実行できる |
 | 性能 | ローカルでの API 応答は p95 で 100ms 以下（タスク1000件時点） |
 | 依存 | できるだけ標準ライブラリを使う（ルーティングは `net/http` の ServeMux）。SQLite ドライバは cgo 不要の `modernc.org/sqlite`。htmx はファイルを同梱する |
 | 設定 | ポート・DB パス・insight の URL・API キーは環境変数で指定する（ハードコードしない）。`.env.example` を用意する |
 | ログ | `log/slog` で構造化ログを出す |
 | テスト | ドメインロジックはテーブル駆動テスト、HTTP は `httptest`、DB はテストごとに一時ファイルの SQLite を使う。エッジケース（0件、目標未設定、タイマーの二重起動、insight の失敗）を必ずテストする |
-| 品質 | `gofmt` / `go vet` / `golangci-lint`。CI（GitHub Actions + mise）で lint とテストを実行する |
+| 品質 | `gofmt` / `go vet` / `golangci-lint`（モジュールごと）/ `shellcheck`。CI（GitHub Actions + mise）で `make lint` / `make test` を実行する |
 
-## 8. ディレクトリ構成（案）
+## 8. ディレクトリ構成
 
 ```
 .
-├── .mise.toml              # go = "1.27"、tasks（dev / test / lint）
-├── cmd/
-│   ├── taskboard/main.go
-│   └── insight/main.go
-├── internal/
-│   ├── config/             # 環境変数の読み込みと検証
-│   ├── db/                 # SQLite 接続・マイグレーション（migrations/*.sql を embed）
-│   ├── server/             # HTTP サーバー起動・グレースフルシャットダウン・/healthz
-│   ├── task/               # ドメインモデル・検証・永続化
-│   ├── api/                # JSON の REST API（/api/v1）、API キー認証、CORS
-│   ├── timer/
-│   ├── reflection/
-│   ├── character/          # レベル・状態の判定ロジック
-│   ├── insight/            # 抽出ロジック（Extractor インターフェース）
-│   ├── insightclient/      # taskboard から insight を呼ぶクライアント
-│   └── web/                # HTML ハンドラ・テンプレート・静的ファイル（htmx.min.js、CSS、ドット絵スプライトを embed）
-├── api/openapi.yaml
+├── .mise.toml              # ツールのバージョン（go / golangci-lint / shellcheck）と .env の読み込み
+├── Makefile                # make start / stop / test / lint など
+├── go.work                 # api / web / insight / shared の各モジュールをまとめる
+├── scripts/service.sh      # バックグラウンド起動・停止
+├── api/                    # Task API（DB を持つ唯一のサービス）
+│   ├── cmd/api/
+│   ├── internal/
+│   │   ├── config/         # API_* 環境変数
+│   │   ├── db/             # SQLite 接続・マイグレーション（migrations/*.sql を embed）
+│   │   ├── task/           # ドメインモデル・検証・永続化
+│   │   ├── httpapi/        # JSON の REST API（/api/v1）、API キー認証、CORS
+│   │   ├── timer/          # （M3）
+│   │   ├── reflection/     # （M4）
+│   │   └── insightclient/  # （M4）api から insight を呼ぶクライアント
+│   └── openapi.yaml        # （M6）
+├── web/                    # 画面アプリ（DB を持たない）
+│   ├── cmd/web/
+│   └── internal/
+│       ├── config/         # WEB_* 環境変数
+│       ├── taskclient/     # api を呼ぶクライアント（タイムアウト・リトライ）
+│       ├── board/          # HTML ハンドラ・テンプレート・静的ファイル（htmx.min.js、CSS、ドット絵スプライトを embed）
+│       └── character/      # （M5）レベル・状態の判定ロジック
+├── insight/                # 抽出 API（DB を持たない）
+│   ├── cmd/insight/
+│   └── internal/
+│       ├── config/         # INSIGHT_* 環境変数
+│       └── extract/        # （M4）抽出ロジック（Extractor インターフェース）
+├── shared/                 # 3サービス共通の部品
+│   ├── httpserver/         # 起動・グレースフルシャットダウン・/healthz・Host 検証・防御ヘッダー
+│   └── envconf/            # 環境変数の読み込みとループバック限定の検証
 └── data/                   # SQLite ファイル（.gitignore で除外）
 ```
 

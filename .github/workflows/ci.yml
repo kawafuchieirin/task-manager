@@ -32,8 +32,8 @@ jobs:
 
       - name: go mod の整合性を確認
         run: |
-          go mod tidy
-          git diff --exit-code go.mod go.sum
+          make tidy
+          git diff --exit-code -- '*/go.mod' '*/go.sum' 
 
       - name: Lint
         run: make lint

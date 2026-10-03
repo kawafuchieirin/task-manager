@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# taskboard / insight をバックグラウンドで起動・停止する。
+# api / insight / web をバックグラウンドで起動・停止する。
 # Makefile（make start / stop / restart / status / logs / build）から呼び出す。
 #
 #   .run/<name>.pid  起動中プロセスの PID
@@ -11,7 +11,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RUN_DIR="$ROOT/.run"
 BIN_DIR="$ROOT/bin"
-SERVICES=(taskboard insight)
+# 起動順。web は api を呼び出すので最後に起動する（停止は逆順）。
+SERVICES=(api insight web)
 # 起動待ちの上限（秒）。初回はマイグレーションがあるため余裕を持たせる。
 START_TIMEOUT=15
 # 停止待ちの上限（秒）。サーバーのグレースフルシャットダウン（10秒）より長くする。
@@ -54,7 +55,8 @@ listen_addr() {
 build() {
   echo "ビルドしています..."
   mkdir -p "$BIN_DIR"
-  go build -o "$BIN_DIR/" ./cmd/taskboard ./cmd/insight
+  # go.work でまとめた各モジュールのコマンドをビルドする。
+  go build -o "$BIN_DIR/" ./api/cmd/api ./insight/cmd/insight ./web/cmd/web
 }
 
 # wait_ready は、起動ログが出る（＝ポートの待ち受けに成功する）まで待つ。
@@ -126,13 +128,13 @@ cmd_start() {
   echo ""
   cmd_status
   echo ""
-  echo "停止: make stop / ログ: make logs"
+  echo "ブラウザで web の URL を開いてください。停止: make stop / ログ: make logs"
 }
 
 cmd_stop() {
-  local name
-  for name in "${SERVICES[@]}"; do
-    stop_one "$name"
+  local i
+  for ((i = ${#SERVICES[@]} - 1; i >= 0; i--)); do
+    stop_one "${SERVICES[i]}"
   done
 }
 
