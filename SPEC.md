@@ -179,7 +179,7 @@ reflections
 
 | 区分 | 要件 |
 |---|---|
-| セキュリティ | 待ち受けアドレスは `127.0.0.1`（外部からはアクセスできない）。他のアプリ向けに任意で API キー認証（`TASKBOARD_API_KEY` 環境変数）を有効化できる。CORS で許可するオリジンも環境変数で設定する。入力はすべてサーバー側で検証する |
+| セキュリティ | 待ち受けアドレスは `127.0.0.1`（外部からはアクセスできない）。他のアプリ向けに任意で API キー認証（`TASKBOARD_API_KEY`、`/api/v1` のみ対象）を有効化できる。CORS で許可するオリジンは `TASKBOARD_CORS_ORIGINS` で設定する。ローカルのサーバーをブラウザ経由で操作されないよう、`Host` ヘッダーの検証（DNS リバインディング対策）と `http.CrossOriginProtection`（CSRF 対策）を全ルートに適用する。入力はすべてサーバー側で検証する |
 | 信頼性 | insight の呼び出しはタイムアウト 5 秒、指数バックオフで最大2回リトライ。失敗時は `extract_status=failed` にして、画面から再実行できる |
 | 性能 | ローカルでの API 応答は p95 で 100ms 以下（タスク1000件時点） |
 | 依存 | できるだけ標準ライブラリを使う（ルーティングは `net/http` の ServeMux）。SQLite ドライバは cgo 不要の `modernc.org/sqlite`。htmx はファイルを同梱する |
@@ -200,15 +200,15 @@ reflections
 │   ├── config/             # 環境変数の読み込みと検証
 │   ├── db/                 # SQLite 接続・マイグレーション（migrations/*.sql を embed）
 │   ├── server/             # HTTP サーバー起動・グレースフルシャットダウン・/healthz
-│   ├── task/               # ドメイン・サービス・リポジトリ
+│   ├── task/               # ドメインモデル・検証・永続化
+│   ├── api/                # JSON の REST API（/api/v1）、API キー認証、CORS
 │   ├── timer/
 │   ├── reflection/
 │   ├── character/          # レベル・状態の判定ロジック
 │   ├── insight/            # 抽出ロジック（Extractor インターフェース）
 │   ├── insightclient/      # taskboard から insight を呼ぶクライアント
-│   └── web/                # HTML ハンドラ・テンプレート
+│   └── web/                # HTML ハンドラ・テンプレート・静的ファイル（htmx.min.js、CSS、ドット絵スプライトを embed）
 ├── api/openapi.yaml
-├── web/static/             # htmx.min.js、CSS、ドット絵スプライト
 └── data/                   # SQLite ファイル（.gitignore で除外）
 ```
 
