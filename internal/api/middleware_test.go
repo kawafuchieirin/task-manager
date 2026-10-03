@@ -17,7 +17,9 @@ func TestRequireAPIKey(t *testing.T) {
 		{"ヘッダーなし", "", http.StatusUnauthorized},
 		{"キー違い", "Bearer wrong-key-wrong-key", http.StatusUnauthorized},
 		{"Bearer なし", testKey, http.StatusUnauthorized},
-		{"小文字の bearer", "bearer " + testKey, http.StatusUnauthorized},
+		{"Bearer のみ", "Bearer ", http.StatusUnauthorized},
+		{"別スキーム", "Basic " + testKey, http.StatusUnauthorized},
+		{"小文字の bearer も許可", "bearer " + testKey, http.StatusOK},
 		{"正しいキー", "Bearer " + testKey, http.StatusOK},
 	}
 	for _, tt := range tests {

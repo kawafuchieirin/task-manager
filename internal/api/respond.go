@@ -18,6 +18,7 @@ const (
 	codeInvalidJSON          = "invalid_json"
 	codeValidationFailed     = "validation_failed"
 	codeNotFound             = "not_found"
+	codeMethodNotAllowed     = "method_not_allowed"
 	codeUnauthorized         = "unauthorized"
 	codeUnsupportedMediaType = "unsupported_media_type"
 	codePayloadTooLarge      = "payload_too_large"

@@ -14,8 +14,8 @@ func requireAPIKey(apiKey string, next http.Handler) http.Handler {
 	}
 	want := []byte(apiKey)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 		// タイミング攻撃でキーを推測されないよう、定数時間で比較する。
+		token, ok := bearerToken(r.Header.Get("Authorization"))
 		if !ok || subtle.ConstantTimeCompare([]byte(token), want) != 1 {
 			w.Header().Set("WWW-Authenticate", `Bearer realm="taskboard"`)
 			writeError(w, http.StatusUnauthorized, codeUnauthorized, "API キーが無効です", nil)
@@ -23,6 +23,16 @@ func requireAPIKey(apiKey string, next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// bearerToken は Authorization ヘッダーから Bearer トークンを取り出す。
+// 認証スキーム名は大文字小文字を区別しない（RFC 9110 §11.1）。
+func bearerToken(header string) (string, bool) {
+	scheme, token, ok := strings.Cut(header, " ")
+	if !ok || !strings.EqualFold(scheme, "Bearer") || token == "" {
+		return "", false
+	}
+	return token, true
 }
 
 // cors は許可したオリジンのブラウザアプリから API を呼べるようにする。

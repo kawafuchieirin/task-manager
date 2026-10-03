@@ -262,7 +262,61 @@ func TestSummary(t *testing.T) {
 }
 
 func TestMethodNotAllowed(t *testing.T) {
+	tests := []struct {
+		method, path, wantAllow string
+	}{
+		{http.MethodPut, "/api/v1/tasks/1", "GET, PATCH, DELETE"},
+		{http.MethodDelete, "/api/v1/tasks", "GET, POST"},
+		{http.MethodPost, "/api/v1/stats/summary", "GET"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.method+" "+tt.path, func(t *testing.T) {
+			h := newTestHandler(t, Options{})
+			rec := do(t, h, tt.method, tt.path, "")
+			if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+				t.Errorf("Content-Type = %q, エラーも JSON で返すはず", ct)
+			}
+			assertErrorCode(t, rec, http.StatusMethodNotAllowed, codeMethodNotAllowed)
+			if got := rec.Header().Get("Allow"); got != tt.wantAllow {
+				t.Errorf("Allow = %q, want %q", got, tt.wantAllow)
+			}
+		})
+	}
+}
+
+func TestUnknownPath(t *testing.T) {
 	h := newTestHandler(t, Options{})
-	rec := do(t, h, http.MethodPut, "/api/v1/tasks/1", `{"title":"t"}`)
-	assertStatus(t, rec, http.StatusMethodNotAllowed)
+	for _, path := range []string{"/api/v1/", "/api/v1/foo", "/api/v1/tasks/1/unknown"} {
+		rec := do(t, h, http.MethodGet, path, "")
+		if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+			t.Errorf("%s: Content-Type = %q", path, ct)
+		}
+		assertErrorCode(t, rec, http.StatusNotFound, codeNotFound)
+	}
+}
+
+func TestCreateTask_FieldValidation(t *testing.T) {
+	h := newTestHandler(t, Options{})
+	assertErrorCode(t, do(t, h, http.MethodPost, "/api/v1/tasks", `{"title":"t","estimated_min":"abc"}`),
+		http.StatusBadRequest, codeInvalidJSON)
+	assertErrorCode(t, do(t, h, http.MethodPost, "/api/v1/tasks", `{"title":"t","estimated_min":10081}`),
+		http.StatusUnprocessableEntity, codeValidationFailed)
+}
+
+func TestUpdateTask_NullAndEmpty(t *testing.T) {
+	h := newTestHandler(t, Options{})
+	createTask(t, h, `{"title":"t","description":"d"}`)
+
+	// estimated_min 以外の null は「変更しない」として扱う（README に記載）。
+	rec := do(t, h, http.MethodPatch, "/api/v1/tasks/1", `{"title":null,"status":null}`)
+	assertStatus(t, rec, http.StatusOK)
+	if got := decode[taskResponse](t, rec); got.Title != "t" || got.Status != task.StatusTodo {
+		t.Errorf("null の項目は変わらないはず: %+v", got)
+	}
+
+	rec = do(t, h, http.MethodPatch, "/api/v1/tasks/1", `{}`)
+	assertStatus(t, rec, http.StatusOK)
+	if got := decode[taskResponse](t, rec); got.Title != "t" || got.Description != "d" {
+		t.Errorf("空の PATCH では何も変わらないはず: %+v", got)
+	}
 }
