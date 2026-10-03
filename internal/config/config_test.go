@@ -26,6 +26,21 @@ func TestLoadTaskboard(t *testing.T) {
 			env:  map[string]string{"TASKBOARD_ADDR": "127.0.0.1:9000", "TASKBOARD_DB_PATH": "/tmp/x.db"},
 			want: Taskboard{Addr: "127.0.0.1:9000", DBPath: "/tmp/x.db"},
 		},
+		{
+			name: "IPv6 ループバックと localhost は許可",
+			env:  map[string]string{"TASKBOARD_ADDR": "[::1]:8080"},
+			want: Taskboard{Addr: "[::1]:8080", DBPath: "data/taskboard.db"},
+		},
+		{
+			name: "localhost は許可",
+			env:  map[string]string{"TASKBOARD_ADDR": "localhost:8080"},
+			want: Taskboard{Addr: "localhost:8080", DBPath: "data/taskboard.db"},
+		},
+		// 画面は認証なしなので、ループバック以外に公開すると API キーを迂回できてしまう
+		{name: "全インターフェース(0.0.0.0)は拒否", env: map[string]string{"TASKBOARD_ADDR": "0.0.0.0:8080"}, wantErr: true},
+		{name: "ホスト省略(全インターフェース)は拒否", env: map[string]string{"TASKBOARD_ADDR": ":8080"}, wantErr: true},
+		{name: "LAN の IP は拒否", env: map[string]string{"TASKBOARD_ADDR": "192.168.1.10:8080"}, wantErr: true},
+		{name: "ホスト名は拒否", env: map[string]string{"TASKBOARD_ADDR": "example.com:8080"}, wantErr: true},
 		{name: "ポートなしはエラー", env: map[string]string{"TASKBOARD_ADDR": "127.0.0.1"}, wantErr: true},
 		{name: "ポートが数値でないとエラー", env: map[string]string{"TASKBOARD_ADDR": "127.0.0.1:http"}, wantErr: true},
 		{name: "ポート0はエラー", env: map[string]string{"TASKBOARD_ADDR": "127.0.0.1:0"}, wantErr: true},
@@ -108,7 +123,9 @@ func TestLoadInsight(t *testing.T) {
 		t.Errorf("Addr = %q, want 127.0.0.1:8081", got.Addr)
 	}
 
-	if _, err := LoadInsight(envFrom(map[string]string{"INSIGHT_ADDR": "bad"})); err == nil {
-		t.Error("不正なアドレスでエラーを期待したが nil")
+	for _, addr := range []string{"bad", "0.0.0.0:8081"} {
+		if _, err := LoadInsight(envFrom(map[string]string{"INSIGHT_ADDR": addr})); err == nil {
+			t.Errorf("INSIGHT_ADDR=%q でエラーを期待したが nil", addr)
+		}
 	}
 }

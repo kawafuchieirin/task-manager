@@ -76,16 +76,30 @@ func valueOr(getenv Getenv, key, fallback string) string {
 	return fallback
 }
 
+// validateAddr は addr がループバックの host:port であることを検証する。
+// 画面には認証が無いため、LAN などに公開すると API キーを迂回して操作できてしまう。
+// ローカル専用アプリとして、ループバック以外での待ち受けは設定の段階で拒否する。
 func validateAddr(key, addr string) error {
-	_, portStr, err := net.SplitHostPort(addr)
+	host, portStr, err := net.SplitHostPort(addr)
 	if err != nil {
 		return fmt.Errorf("%s=%q は host:port 形式で指定してください: %w", key, addr, err)
+	}
+	if !isLoopback(host) {
+		return fmt.Errorf("%s=%q: ローカル専用のため、ホストは 127.0.0.1 / ::1 / localhost のいずれかにしてください", key, addr)
 	}
 	port, err := strconv.Atoi(portStr)
 	if err != nil || port < 1 || port > 65535 {
 		return fmt.Errorf("%s=%q のポートは 1〜65535 で指定してください", key, addr)
 	}
 	return nil
+}
+
+func isLoopback(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // parseOrigins はカンマ区切りのオリジン一覧を検証し、scheme://host[:port] の形に揃えて返す。

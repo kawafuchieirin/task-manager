@@ -13,10 +13,13 @@ func TestLocalHosts(t *testing.T) {
 		addr string
 		want []string
 	}{
-		{"127.0.0.1:8080", append(slices.Clone(loopback), "127.0.0.1")},
+		{"127.0.0.1:8080", loopback},
+		{"[::1]:8080", loopback},
+		{"localhost:8080", loopback},
+		{"127.0.0.2:8080", append(slices.Clone(loopback), "127.0.0.2")},
+		// ループバック以外は Host として許可しない（設定でも拒否するが、二重に防ぐ）
 		{"0.0.0.0:8080", loopback},
-		{":8080", loopback},
-		{"192.168.1.10:8080", append(slices.Clone(loopback), "192.168.1.10")},
+		{"192.168.1.10:8080", loopback},
 	}
 	for _, tt := range tests {
 		if got := LocalHosts(tt.addr); !slices.Equal(got, tt.want) {

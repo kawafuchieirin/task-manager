@@ -3,21 +3,23 @@ package server
 import (
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 )
 
 // LocalHosts は待ち受けアドレス addr でアクセスされうるホスト名の一覧を返す。
-// ループバックの別名に加え、addr に具体的なホストが指定されていればそれも含める。
+// ループバックの別名に加え、127.0.0.2 のような別のループバックアドレスで待ち受けている場合はそれも含める。
+// ループバック以外のホストは、Host ヘッダーとして許可しない。
 func LocalHosts(addr string) []string {
 	hosts := []string{"localhost", "127.0.0.1", "::1"}
 	host, _, err := net.SplitHostPort(addr)
-	if err != nil || host == "" {
+	if err != nil {
 		return hosts
 	}
-	if ip := net.ParseIP(host); ip != nil && ip.IsUnspecified() {
-		return hosts // 0.0.0.0 や :: はホスト名としては使われない
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() && !slices.Contains(hosts, ip.String()) {
+		hosts = append(hosts, ip.String())
 	}
-	return append(hosts, host)
+	return hosts
 }
 
 // RequireHost は Host ヘッダーが allowed のいずれかであるリクエストだけを通す。

@@ -31,11 +31,11 @@ DB は初回起動時に `data/taskboard.db` に作成され、マイグレー�
 
 | 環境変数 | 既定値 | 説明 |
 |---|---|---|
-| `TASKBOARD_ADDR` | `127.0.0.1:8080` | taskboard の待ち受けアドレス |
+| `TASKBOARD_ADDR` | `127.0.0.1:8080` | taskboard の待ち受けアドレス（ループバックのみ。`0.0.0.0` などは起動エラー） |
 | `TASKBOARD_DB_PATH` | `data/taskboard.db` | SQLite ファイルのパス |
 | `TASKBOARD_API_KEY` | （なし） | 設定すると `/api/v1` に `Authorization: Bearer <キー>` を要求する（16文字以上） |
 | `TASKBOARD_CORS_ORIGINS` | （なし） | ブラウザから API を呼ぶ他のアプリのオリジン（カンマ区切り。例: `http://localhost:3000`） |
-| `INSIGHT_ADDR` | `127.0.0.1:8081` | insight の待ち受けアドレス |
+| `INSIGHT_ADDR` | `127.0.0.1:8081` | insight の待ち受けアドレス（ループバックのみ） |
 
 ## 他のアプリから API を使う
 
