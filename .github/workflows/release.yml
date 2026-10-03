@@ -1,3 +1,22 @@
+# =============================================================================
+# Release ワークフロー
+#
+# main へのマージ（push）時に、Conventional Commits からバージョンを自動判定し、
+# Git タグと GitHub Release を作成する。
+#
+# バージョンの決め方（前回の v*.*.* タグ以降のコミットを走査）:
+#   - `feat!:` / `fix(scope)!:` / 本文に `BREAKING CHANGE:` → major (v1.2.3 → v2.0.0)
+#   - `feat:`                                              → minor (v1.2.3 → v1.3.0)
+#   - `fix:` / `perf:`                                     → patch (v1.2.3 → v1.2.4)
+#   - 上記以外のみ（docs / chore / ci / test / refactor 等）→ リリースしない
+#   - タグが 1 つも無い場合は v0.0.0 を起点に計算する
+#
+# 運用上の注意:
+#   - squash マージでは PR タイトルがコミットメッセージになるため、
+#     PR タイトルを Conventional Commits 形式（例: `feat: タスク検索を追加`）にすること
+#   - リリースノートは GitHub の自動生成機能を使用。カテゴリ分けは .github/release.yml で設定
+#   - リポジトリのデフォルト権限は read だが、下記 permissions で contents: write を付与している
+# =============================================================================
 name: Release
 
 on:
@@ -22,6 +41,8 @@ jobs:
           # 前回タグからのコミット履歴を走査するため全履歴を取得
           fetch-depth: 0
 
+      # 前回タグ以降のコミットから次のバージョンを算出する。
+      # outputs: release (true/false), tag (例: v1.3.0), previous_tag (例: v1.2.3、初回は空), bump (major/minor/patch)
       - name: Determine next version
         id: version
         run: |
@@ -53,6 +74,18 @@ jobs:
           if [ -z "$bump" ]; then
             echo "リリース対象のコミット (feat / fix / perf / 破壊的変更) がないためスキップします"
             echo "release=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "## ⏭️ リリースをスキップしました"
+              echo
+              echo "前回タグ \`${latest_tag:-(なし)}\` 以降に、リリース対象のコミットがありません。"
+              echo
+              echo "| コミット種別 | バージョン |"
+              echo "|---|---|"
+              echo "| \`feat!:\` / \`BREAKING CHANGE:\` | major |"
+              echo "| \`feat:\` | minor |"
+              echo "| \`fix:\` / \`perf:\` | patch |"
+              echo "| その他（docs / chore / ci 等） | リリースなし |"
+            } >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
 
@@ -68,17 +101,32 @@ jobs:
           echo "release=true" >> "$GITHUB_OUTPUT"
           echo "tag=${next}" >> "$GITHUB_OUTPUT"
           echo "previous_tag=${latest_tag}" >> "$GITHUB_OUTPUT"
+          echo "bump=${bump}" >> "$GITHUB_OUTPUT"
 
+      # 算出したタグで GitHub Release を作成する（タグも同時に作成される）。
+      # リリースノートは前回タグからの差分（マージされた PR 一覧）を自動生成する。
       - name: Create GitHub Release
         if: steps.version.outputs.release == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
           PREVIOUS_TAG: ${{ steps.version.outputs.previous_tag }}
+          BUMP: ${{ steps.version.outputs.bump }}
         run: |
           set -euo pipefail
           args=(--target "$GITHUB_SHA" --title "$TAG" --generate-notes --latest)
           if [ -n "$PREVIOUS_TAG" ]; then
             args+=(--notes-start-tag "$PREVIOUS_TAG")
           fi
-          gh release create "$TAG" "${args[@]}"
+          url=$(gh release create "$TAG" "${args[@]}")
+
+          {
+            echo "## 🚀 リリースを作成しました: [\`${TAG}\`](${url})"
+            echo
+            echo "| 項目 | 値 |"
+            echo "|---|---|"
+            echo "| 前回タグ | \`${PREVIOUS_TAG:-(なし)}\` |"
+            echo "| 新しいタグ | \`${TAG}\` |"
+            echo "| bump 種別 | ${BUMP} |"
+            echo "| 対象コミット | \`${GITHUB_SHA::7}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
