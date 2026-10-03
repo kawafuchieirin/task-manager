@@ -1,13 +1,34 @@
 [tools]
 go = "1.27"
 golangci-lint = "2.14.0"
+shellcheck = "0.11.0"
 
 [env]
 # .env があれば読み込む（無くても既定値で起動できる）。設定項目は .env.example を参照。
 _.file = { path = ".env", redact = false }
 
+[tasks.start]
+description = "taskboard と insight をバックグラウンドで起動し、接続先を表示する"
+run = "bash scripts/service.sh start"
+
+[tasks.stop]
+description = "バックグラウンドの taskboard と insight を停止する"
+run = "bash scripts/service.sh stop"
+
+[tasks.restart]
+description = "バックグラウンドの taskboard と insight を再ビルドして再起動する"
+run = "bash scripts/service.sh restart"
+
+[tasks.status]
+description = "taskboard と insight の起動状態と接続先を表示する"
+run = "bash scripts/service.sh status"
+
+[tasks.logs]
+description = "taskboard と insight のログを表示し続ける（Ctrl-C で終了）"
+run = "bash scripts/service.sh logs"
+
 [tasks.dev]
-description = "taskboard と insight を同時に起動する"
+description = "taskboard と insight をフォアグラウンドで起動する（開発用。Ctrl-C で停止）"
 depends = ["dev:taskboard", "dev:insight"]
 
 [tasks."dev:taskboard"]
@@ -23,8 +44,8 @@ description = "全テストをレースディテクタ付きで実行する"
 run = "go test -race ./..."
 
 [tasks.lint]
-description = "golangci-lint で静的解析する"
-run = "golangci-lint run"
+description = "golangci-lint と shellcheck で静的解析する"
+run = ["golangci-lint run", "shellcheck scripts/*.sh"]
 
 [tasks.fmt]
 description = "コードを整形する"
