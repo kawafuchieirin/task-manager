@@ -1,0 +1,41 @@
+# =============================================================================
+# CI ワークフロー
+#
+# PR と main への push で lint とテストを実行する。
+# Go / golangci-lint のバージョンは .mise.toml を唯一の情報源とし、ローカルと揃える。
+# =============================================================================
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: jdx/mise-action@v3
+        with:
+          cache: true
+
+      - name: go mod の整合性を確認
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum
+
+      - name: Lint
+        run: mise run lint
+
+      - name: Test
+        run: mise run test
