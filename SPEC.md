@@ -89,6 +89,13 @@
 - 実際の時間 = 全区間の合計
 - 画面には「目標 / 実績 / 差分」を表示し、目標を超えたら強調表示する
 - これらの機能はすべて Task API からも操作できる
+- 細かな決まり（M3 で決定）
+  - 未着手のタスクでタイマーを開始すると進行中にする。完了したタスクでは開始できない（409）
+  - タスクを完了にすると、計測中のタイマーは自動で止める（止め忘れで計測が続くのを防ぐ）
+  - 計測中の区間は修正できない（先に停止する）。削除するとタイマーの取り消しになる
+  - 区間は「終了 > 開始」「24時間以内」「終了が未来でない」こと。区間どうしの重なりは検査しない
+  - 画面の手動入力は「今までの N 分（1〜1440）」で追加する。開始・終了時刻を細かく指定する修正は API（PATCH）で行う
+  - 計測中は経過時間を画面上で1秒ごとに更新する（描画時点の実績からの差で数え、ブラウザの時計のずれに影響されない）
 
 ### F5. 学んだこと・できなかったことの抽出（別 API）
 
@@ -125,7 +132,7 @@
 | POST | `/api/v1/tasks/{id}/timer/stop` | タイマー停止 |
 | GET | `/api/v1/tasks/{id}/time-entries` | 時間区間の一覧 |
 | POST | `/api/v1/tasks/{id}/time-entries` | 時間区間を手動で追加 |
-| PATCH / DELETE | `/api/v1/time-entries/{id}` | 時間区間の修正・削除 |
+| GET / PATCH / DELETE | `/api/v1/time-entries/{id}` | 時間区間の取得・修正・削除 |
 | PUT | `/api/v1/tasks/{id}/reflection` | 振り返りメモの登録（insight での抽出を実行する） |
 | GET | `/api/v1/reflections?from=&to=` | 期間内の抽出結果一覧 |
 | GET | `/api/v1/stats/summary` | 進捗率、目標/実績時間の合計、キャラクターのレベル |
@@ -188,7 +195,7 @@ reflections
 | 依存 | できるだけ標準ライブラリを使う（ルーティングは `net/http` の ServeMux）。SQLite ドライバは cgo 不要の `modernc.org/sqlite`。htmx はファイルを同梱する |
 | 設定 | ポート・DB パス・insight の URL・API キーは環境変数で指定する（ハードコードしない）。`.env.example` を用意する |
 | ログ | `log/slog` で構造化ログを出す |
-| テスト | ドメインロジックはテーブル駆動テスト、HTTP は `httptest`、DB はテストごとに一時ファイルの SQLite を使う。エッジケース（0件、目標未設定、タイマーの二重起動、insight の失敗）を必ずテストする |
+| テスト | ドメインロジックはテーブル駆動テスト、HTTP は `httptest`、DB はテストごとに一時ファイルの SQLite を使う。時刻は `task.WithClock` で固定する。エッジケース（0件、目標未設定、タイマーの二重起動、insight の失敗）を必ずテストする |
 | 品質 | `gofmt` / `go vet` / `golangci-lint`（モジュールごと）/ `shellcheck`。CI（GitHub Actions + mise）で `make lint` / `make test` を実行する |
 
 ## 8. ディレクトリ構成
@@ -204,9 +211,8 @@ reflections
 │   ├── internal/
 │   │   ├── config/         # API_* 環境変数
 │   │   ├── db/             # SQLite 接続・マイグレーション（migrations/*.sql を embed）
-│   │   ├── task/           # ドメインモデル・検証・永続化
+│   │   ├── task/           # ドメインモデル・検証・永続化、タイマーと時間記録（timer.go）
 │   │   ├── httpapi/        # JSON の REST API（/api/v1）、API キー認証、CORS
-│   │   ├── timer/          # （M3）
 │   │   ├── reflection/     # （M4）
 │   │   └── insightclient/  # （M4）api から insight を呼ぶクライアント
 │   └── openapi.yaml        # （M6）

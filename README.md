@@ -88,8 +88,18 @@ curl 'http://127.0.0.1:8080/api/v1/tasks?status=todo'
 curl -X PATCH http://127.0.0.1:8080/api/v1/tasks/1 \
   -H 'Content-Type: application/json' -d '{"status": "done"}'
 
-# 進捗
-curl http://127.0.0.1:8080/api/v1/stats/summary   # {"total":1,"done":1,"progress_percent":100}
+# タイマーの開始・停止（同時に動かせるのは全体で1つ）
+curl -X POST http://127.0.0.1:8080/api/v1/tasks/1/timer/start
+curl -X POST http://127.0.0.1:8080/api/v1/tasks/1/timer/stop
+
+# 作業した区間をあとから記録（タイムゾーン付きの RFC3339）
+curl -X POST http://127.0.0.1:8080/api/v1/tasks/1/time-entries \
+  -H 'Content-Type: application/json' \
+  -d '{"started_at": "2026-10-03T19:00:00+09:00", "ended_at": "2026-10-03T19:45:00+09:00"}'
+
+# 進捗と時間の合計
+curl http://127.0.0.1:8080/api/v1/stats/summary
+# {"total":1,"done":1,"progress_percent":100,"estimated_min":90,"actual_sec":2700}
 ```
 
 | メソッド | パス | 説明 |
@@ -97,9 +107,15 @@ curl http://127.0.0.1:8080/api/v1/stats/summary   # {"total":1,"done":1,"progres
 | GET | `/api/v1/tasks?status=` | 一覧 |
 | POST | `/api/v1/tasks` | 作成 |
 | GET / PATCH / DELETE | `/api/v1/tasks/{id}` | 取得 / 部分更新 / 削除 |
-| GET | `/api/v1/stats/summary` | 進捗（完了件数・完了率） |
+| POST | `/api/v1/tasks/{id}/timer/start` | タイマー開始（201。未着手なら進行中にする） |
+| POST | `/api/v1/tasks/{id}/timer/stop` | タイマー停止（確定した区間を返す） |
+| GET / POST | `/api/v1/tasks/{id}/time-entries` | 時間記録の一覧 / 手動追加 |
+| GET / PATCH / DELETE | `/api/v1/time-entries/{id}` | 時間記録の取得 / 修正 / 削除（計測中の区間を削除するとタイマーの取り消し） |
+| GET | `/api/v1/stats/summary` | 進捗（完了件数・完了率）と目標・実績時間の合計 |
 
-- 日時は UTC の RFC3339、未設定の値は `null` で返します
+- 日時は UTC の RFC3339、未設定の値は `null` で返します。送るときはタイムゾーン付きなら何でも受け付けます
+- タスクには `actual_sec`（実績時間の合計秒。計測中の区間は応答時点まで）と `running_since`（計測中タイマーの開始時刻）が付きます
+- タスクを完了にすると、計測中のタイマーは自動で止まります。時間記録は「終了 > 開始」「24時間以内」「終了が未来でない」ことが必要です
 - PATCH は部分更新です。送らなかった項目は変わりません
   - `"estimated_min": null` を送ると目標時間を未設定に戻せます
   - それ以外の項目（`title` / `description` / `status`）の `null` は「変更しない」として扱います
@@ -115,6 +131,10 @@ curl http://127.0.0.1:8080/api/v1/stats/summary   # {"total":1,"done":1,"progres
 | `method_not_allowed` | 405 | パスに対して使えないメソッド（`Allow` ヘッダーに使えるメソッド） |
 | `payload_too_large` | 413 | ボディが 1MB を超えている |
 | `unsupported_media_type` | 415 | `Content-Type: application/json` でない |
+| `timer_already_running` | 409 | すでにタイマーが動いている（メッセージにどのタスクかを含む） |
+| `timer_not_running` | 409 | 止めようとしたタスクのタイマーが動いていない |
+| `task_completed` | 409 | 完了したタスクのタイマーは開始できない |
+| `entry_running` | 409 | 計測中の区間は修正できない（先に停止する） |
 | `validation_failed` | 422 | 入力値の検証エラー（`details` に項目ごとの理由） |
 | `internal_error` | 500 | サーバー内部のエラー |
 
