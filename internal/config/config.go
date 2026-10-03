@@ -4,7 +4,9 @@ package config
 import (
 	"fmt"
 	"net"
+	"net/url"
 	"strconv"
+	"strings"
 )
 
 // Getenv は環境変数の取得関数。テストで差し替えられるよう os.Getenv を直接呼ばない。
@@ -14,6 +16,10 @@ type Getenv func(key string) string
 type Taskboard struct {
 	Addr   string
 	DBPath string
+	// APIKey が空でなければ、/api/v1 へのリクエストに Bearer トークンとして要求する。
+	APIKey string
+	// CORSOrigins はブラウザから API を呼べる他のアプリのオリジン（例: http://localhost:3000）。
+	CORSOrigins []string
 }
 
 // Insight は insight サービスの設定。
@@ -26,6 +32,9 @@ const (
 	defaultTaskboardAddr = "127.0.0.1:8080"
 	defaultInsightAddr   = "127.0.0.1:8081"
 	defaultDBPath        = "data/taskboard.db"
+
+	// minAPIKeyLen は推測されにくいキーを強制するための最小長。
+	minAPIKeyLen = 16
 )
 
 // LoadTaskboard は taskboard の設定を読み込み、検証する。
@@ -33,10 +42,19 @@ func LoadTaskboard(getenv Getenv) (Taskboard, error) {
 	cfg := Taskboard{
 		Addr:   valueOr(getenv, "TASKBOARD_ADDR", defaultTaskboardAddr),
 		DBPath: valueOr(getenv, "TASKBOARD_DB_PATH", defaultDBPath),
+		APIKey: getenv("TASKBOARD_API_KEY"),
 	}
 	if err := validateAddr("TASKBOARD_ADDR", cfg.Addr); err != nil {
 		return Taskboard{}, err
 	}
+	if cfg.APIKey != "" && len(cfg.APIKey) < minAPIKeyLen {
+		return Taskboard{}, fmt.Errorf("TASKBOARD_API_KEY は%d文字以上にしてください", minAPIKeyLen)
+	}
+	origins, err := parseOrigins("TASKBOARD_CORS_ORIGINS", getenv("TASKBOARD_CORS_ORIGINS"))
+	if err != nil {
+		return Taskboard{}, err
+	}
+	cfg.CORSOrigins = origins
 	return cfg, nil
 }
 
@@ -68,4 +86,22 @@ func validateAddr(key, addr string) error {
 		return fmt.Errorf("%s=%q のポートは 1〜65535 で指定してください", key, addr)
 	}
 	return nil
+}
+
+// parseOrigins はカンマ区切りのオリジン一覧を検証し、scheme://host[:port] の形に揃えて返す。
+func parseOrigins(key, raw string) ([]string, error) {
+	var origins []string
+	for _, item := range strings.Split(raw, ",") {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		u, err := url.Parse(item)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" ||
+			(u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" || u.User != nil {
+			return nil, fmt.Errorf("%s の %q は http(s)://host[:port] 形式で指定してください", key, item)
+		}
+		origins = append(origins, u.Scheme+"://"+u.Host)
+	}
+	return origins, nil
 }

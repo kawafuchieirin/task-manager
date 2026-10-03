@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -47,8 +46,9 @@ func run(logger *slog.Logger) error {
 	}
 	logger.Info("DB を準備しました", "path", cfg.DBPath)
 
-	mux := http.NewServeMux()
-	mux.Handle("GET /healthz", server.HealthHandler(logger, database.PingContext))
-
-	return server.Run(ctx, server.New(cfg.Addr, mux), logger)
+	handler, err := newHandler(cfg, database, logger)
+	if err != nil {
+		return err
+	}
+	return server.Run(ctx, server.New(cfg.Addr, handler), logger)
 }
