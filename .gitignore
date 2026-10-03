@@ -6,3 +6,6 @@
 
 # ビルド成果物
 /bin/
+
+# バックグラウンド起動時の PID とログ（scripts/service.sh）
+/.run/

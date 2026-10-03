@@ -42,6 +42,7 @@ func Run(ctx context.Context, srv *http.Server, logger *slog.Logger) error {
 func Serve(ctx context.Context, srv *http.Server, ln net.Listener, logger *slog.Logger) error {
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.Serve(ln) }()
+	// scripts/service.sh がこのメッセージと addr から接続先を読み取るため、変更するときは合わせて直す。
 	logger.Info("サーバーを起動しました", "addr", ln.Addr().String())
 
 	select {

@@ -2,7 +2,8 @@
 # CI ワークフロー
 #
 # PR と main への push で lint とテストを実行する。
-# Go / golangci-lint のバージョンは .mise.toml を唯一の情報源とし、ローカルと揃える。
+# Go / golangci-lint / shellcheck のバージョンは .mise.toml を唯一の情報源とし、ローカルと揃える。
+# 実行するコマンドはローカルと同じ Makefile のターゲットを使う。
 # =============================================================================
 name: CI
 
@@ -35,7 +36,7 @@ jobs:
           git diff --exit-code go.mod go.sum
 
       - name: Lint
-        run: mise run lint
+        run: make lint
 
       - name: Test
-        run: mise run test
+        run: make test

@@ -9,19 +9,34 @@
 
 ## セットアップ
 
-[mise](https://mise.jdx.dev/) が必要です（Go と golangci-lint のバージョンは `.mise.toml` で固定）。
+[mise](https://mise.jdx.dev/) と make が必要です。Go・golangci-lint・shellcheck のバージョンは `.mise.toml` で固定し、
+`make` の各コマンドは `mise exec` 経由で実行されます（シェルで mise を有効化していなくても同じバージョンが使われます）。
 
 ```sh
 mise install
-mise run dev      # taskboard と insight を同時に起動（Ctrl-C で停止）
+make start    # バックグラウンドで起動し、接続先を表示
 ```
 
-起動確認:
+```text
+● taskboard  起動中  http://127.0.0.1:8080  (PID 12345)
+● insight    起動中  http://127.0.0.1:8081  (PID 12346)
 
-```sh
-curl http://127.0.0.1:8080/healthz   # {"status":"ok"}
-curl http://127.0.0.1:8081/healthz   # {"status":"ok"}
+停止: make stop / ログ: make logs
 ```
+
+ブラウザで taskboard の URL（既定は http://127.0.0.1:8080 ）を開くとボードが表示されます。
+
+| コマンド | 内容 |
+|---|---|
+| `make start` | ビルドしてバックグラウンドで起動し、接続先を表示（起動済みなら何もしない） |
+| `make stop` | 停止（正常終了を最大15秒待ち、終わらなければ強制終了） |
+| `make restart` | 再ビルドして再起動（コードを変更したとき） |
+| `make status` | 起動状態と接続先を表示 |
+| `make logs` | ログを表示し続ける（Ctrl-C で終了。サービスは止まらない） |
+
+- PID とログは `.run/` に保存されます。ログは起動のたびに作り直されます
+- ポートが使用中などで起動できなかった場合は、ログの末尾を表示し、起動途中のサービスも止めます
+- 表示される接続先は、サーバーが実際に待ち受けているアドレスです（`TASKBOARD_ADDR` / `INSIGHT_ADDR` の設定が反映されます）
 
 DB は初回起動時に `data/taskboard.db` に作成され、マイグレーションが自動で適用されます。
 
@@ -93,9 +108,11 @@ API の手前の防御で拒否された場合は、JSON ではなく平文で�
 
 ## 開発コマンド
 
+`make`（または `make help`）でコマンド一覧を表示できます。
+
 | コマンド | 内容 |
 |---|---|
-| `mise run dev` | 両サービスを起動 |
-| `mise run test` | 全テスト（`-race` 付き） |
-| `mise run lint` | golangci-lint |
-| `mise run fmt` | コード整形 |
+| `make build` | `bin/` にビルド |
+| `make test` | 全テスト（`-race` 付き） |
+| `make lint` | golangci-lint と shellcheck |
+| `make fmt` | コード整形 |

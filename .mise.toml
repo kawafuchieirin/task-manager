@@ -1,31 +1,8 @@
 [tools]
 go = "1.27"
 golangci-lint = "2.14.0"
+shellcheck = "0.11.0"
 
 [env]
 # .env があれば読み込む（無くても既定値で起動できる）。設定項目は .env.example を参照。
 _.file = { path = ".env", redact = false }
-
-[tasks.dev]
-description = "taskboard と insight を同時に起動する"
-depends = ["dev:taskboard", "dev:insight"]
-
-[tasks."dev:taskboard"]
-description = "taskboard を起動する（http://127.0.0.1:8080）"
-run = "go run ./cmd/taskboard"
-
-[tasks."dev:insight"]
-description = "insight を起動する（http://127.0.0.1:8081）"
-run = "go run ./cmd/insight"
-
-[tasks.test]
-description = "全テストをレースディテクタ付きで実行する"
-run = "go test -race ./..."
-
-[tasks.lint]
-description = "golangci-lint で静的解析する"
-run = "golangci-lint run"
-
-[tasks.fmt]
-description = "コードを整形する"
-run = "golangci-lint fmt"
