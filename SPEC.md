@@ -19,7 +19,7 @@
 | 言語 | Go 1.27（mise で管理） |
 | フロントエンド | Go `html/template` + htmx（サーバーサイドレンダリング） |
 | DB | SQLite（ファイル1つ、Docker 不要） |
-| 起動方法 | `mise install` → `mise run dev` |
+| 起動方法 | `mise install` → `mise run start`（バックグラウンド起動・接続先を表示）、停止は `mise run stop` |
 
 ### 実行環境に mise + SQLite を選んだ理由
 
