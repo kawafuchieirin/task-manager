@@ -75,6 +75,62 @@ wait_ready() {
   return 1
 }
 
+# conflict_port は、起動ログが「ポート使用中」で終わっていればそのポート番号を出力する。
+# 設定の既定値をここに重複させないため、Go の listen エラー（listen tcp HOST:PORT: bind: address already in use）から読み取る。
+conflict_port() {
+  local file
+  file=$(log_file "$1")
+  [[ -f $file ]] || return 0
+  sed -n 's/.*listen tcp .*:\([0-9][0-9]*\): bind: address already in use.*/\1/p' "$file" | tail -n 1
+}
+
+# explain_port_conflict は、ポート使用中で起動できなかったとき、そのポートを使っているプロセスと対処を表示する。
+explain_port_conflict() {
+  local name=$1 port pids pid cmd started
+  port=$(conflict_port "$name")
+  [[ -n $port ]] || return 0
+
+  echo ""
+  if ! command -v lsof >/dev/null 2>&1; then
+    echo "ポート ${port} は別のプロセスが使用中です（lsof が無いため、どのプロセスかは表示できません）。"
+    echo "ss -ltnp 'sport = :${port}' などで確認し、止めてから make start を実行してください。"
+    return 0
+  fi
+
+  # 待ち受け中（LISTEN）のプロセスだけを対象にする。接続しているだけのクライアントは含めない。
+  pids=$(lsof -nP -t -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | sort -u || true)
+  if [[ -z $pids ]]; then
+    echo "ポート ${port} は使用中でしたが、使っていたプロセスはすでに終了しています。もう一度 make start を実行してください。"
+    return 0
+  fi
+
+  echo "ポート ${port} は次のプロセスが使用中です:"
+  local own=false exe
+  for pid in $pids; do
+    cmd=$(ps -p "$pid" -o command= 2>/dev/null || echo "（取得できません）")
+    # 起動時刻の末尾の空白を取り除く（ps の lstart は固定幅で出力される）
+    started=$(ps -p "$pid" -o lstart= 2>/dev/null | sed 's/[[:space:]]*$//' || true)
+    echo "  PID ${pid}  ${cmd}${started:+（起動: ${started}）}"
+    # 相対パスで起動されていても判定できるよう、コマンド行ではなく実行ファイルの絶対パスを見る。
+    exe=$(lsof -a -p "$pid" -d txt -Fn 2>/dev/null | sed -n 's/^n//p' | head -n 1 || true)
+    [[ ${exe:-$cmd} == "$BIN_DIR/"* ]] && own=true
+  done
+  if [[ $own == true ]]; then
+    echo "このリポジトリの bin/ から起動された古いプロセスです（make stop の管理外。以前の構成の残りなど）。"
+  fi
+  echo "止めてよいプロセスなら kill $(echo "$pids" | tr '\n' ' ')で停止してから、もう一度 make start を実行してください。"
+  echo "使用中のポートを避ける場合は、.env で ${name} の待ち受けアドレス（例: $(addr_key "$name")=127.0.0.1:別のポート）を変更してください。"
+}
+
+# addr_key はサービスの待ち受けアドレスを指定する環境変数名を返す。
+addr_key() {
+  case "$1" in
+    api) echo "API_ADDR" ;;
+    web) echo "WEB_ADDR" ;;
+    insight) echo "INSIGHT_ADDR" ;;
+  esac
+}
+
 stop_one() {
   local name=$1 pid i
   if ! pid=$(running_pid "$name"); then
@@ -117,6 +173,7 @@ cmd_start() {
       echo "" >&2
       echo "$name の起動に失敗しました。ログ（$(log_file "$name")）:" >&2
       tail -n 20 "$(log_file "$name")" >&2 || true
+      explain_port_conflict "$name" >&2
       # 一部だけ動いている状態を残さないよう、今回起動したものは止める。
       for n in "${started[@]}"; do
         stop_one "$n" >/dev/null
