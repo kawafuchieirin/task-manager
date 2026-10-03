@@ -65,19 +65,31 @@ curl http://127.0.0.1:8080/api/v1/stats/summary   # {"total":1,"done":1,"progres
 | GET / PATCH / DELETE | `/api/v1/tasks/{id}` | 取得 / 部分更新 / 削除 |
 | GET | `/api/v1/stats/summary` | 進捗（完了件数・完了率） |
 
-- 日時は UTC の RFC3339、未設定の値は `null` で返します。PATCH で `"estimated_min": null` を送ると目標時間を未設定に戻せます
-- 未知のフィールドはエラー（400）になります
+- 日時は UTC の RFC3339、未設定の値は `null` で返します
+- PATCH は部分更新です。送らなかった項目は変わりません
+  - `"estimated_min": null` を送ると目標時間を未設定に戻せます
+  - それ以外の項目（`title` / `description` / `status`）の `null` は「変更しない」として扱います
+- 未知のフィールドはエラー（400）、`?status=` に不正な値を渡すと 422 になります
+- `TASKBOARD_CORS_ORIGINS` で許可したオリジンは、CSRF 対策の信頼オリジンにもなります（画面のフォーム送信も受け付けます）。信頼できるアプリだけを登録してください
 - エラーは `{"error": {"code": "...", "message": "...", "details": [...]}}` の形式です
 
 | code | HTTP | 意味 |
 |---|---|---|
 | `invalid_json` | 400 | JSON の構文・型の誤り、未知のフィールド |
 | `unauthorized` | 401 | API キーが無い・違う |
-| `not_found` | 404 | タスクが存在しない |
+| `not_found` | 404 | タスクまたは API のパスが存在しない |
+| `method_not_allowed` | 405 | パスに対して使えないメソッド（`Allow` ヘッダーに使えるメソッド） |
 | `payload_too_large` | 413 | ボディが 1MB を超えている |
 | `unsupported_media_type` | 415 | `Content-Type: application/json` でない |
 | `validation_failed` | 422 | 入力値の検証エラー（`details` に項目ごとの理由） |
 | `internal_error` | 500 | サーバー内部のエラー |
+
+API の手前の防御で拒否された場合は、JSON ではなく平文で返ります。
+
+| HTTP | 原因 |
+|---|---|
+| 403 | 他サイトのブラウザからの送信（CSRF 対策）。`TASKBOARD_CORS_ORIGINS` に登録すると許可される |
+| 421 | `Host` ヘッダーが `localhost` / `127.0.0.1` / `::1` 以外（DNS リバインディング対策） |
 
 ## 開発コマンド
 
