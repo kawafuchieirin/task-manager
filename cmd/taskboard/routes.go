@@ -32,6 +32,7 @@ func newHandler(cfg config.Taskboard, database *sql.DB, logger *slog.Logger) (ht
 
 	// 他サイトからのフォーム送信などによる CSRF を防ぐ。
 	// ブラウザ以外（curl や他のアプリのサーバー）からのリクエストは対象外なのでそのまま通る。
+	// 信頼オリジン（CORS で許可したアプリ）は画面のルートにも送信できる。信頼済みアプリという前提。
 	csrf := http.NewCrossOriginProtection()
 	for _, origin := range cfg.CORSOrigins {
 		if err := csrf.AddTrustedOrigin(origin); err != nil {
@@ -39,5 +40,5 @@ func newHandler(cfg config.Taskboard, database *sql.DB, logger *slog.Logger) (ht
 		}
 	}
 
-	return server.RequireHost(server.LocalHosts(cfg.Addr), csrf.Handler(mux)), nil
+	return server.RequireHost(server.LocalHosts(cfg.Addr), server.SecurityHeaders(csrf.Handler(mux))), nil
 }

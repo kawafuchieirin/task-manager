@@ -104,6 +104,42 @@ func TestRoutes_CSRF(t *testing.T) {
 	}
 }
 
+func TestRoutes_SecurityHeaders(t *testing.T) {
+	h := newTestServer(t, config.Taskboard{})
+	for _, path := range []string{"/", "/api/v1/tasks", "/nope"} {
+		if got := serve(h, http.MethodGet, path, "").Header().Get("Content-Security-Policy"); got != "frame-ancestors 'none'" {
+			t.Errorf("%s: CSP = %q（クリックジャッキング対策）", path, got)
+		}
+	}
+}
+
+func TestRoutes_TrustedOriginCanUseAPIWithKey(t *testing.T) {
+	const origin = "http://localhost:3000"
+	h := newTestServer(t, config.Taskboard{APIKey: "0123456789abcdef", CORSOrigins: []string{origin}})
+	browser := []reqOpt{
+		header("Origin", origin), header("Sec-Fetch-Site", "same-site"),
+		header("Content-Type", "application/json"), header("Authorization", "Bearer 0123456789abcdef"),
+	}
+
+	rec := serve(h, http.MethodPost, "/api/v1/tasks", `{"title":"他アプリから"}`, browser...)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("POST: status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != origin {
+		t.Errorf("Allow-Origin = %q", got)
+	}
+	if rec := serve(h, http.MethodPatch, "/api/v1/tasks/1", `{"status":"done"}`, browser...); rec.Code != http.StatusOK {
+		t.Errorf("PATCH: status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+
+	// 許可していないローカルの別アプリ（same-site）からは CSRF 対策で拒否される。
+	other := []reqOpt{header("Origin", "http://localhost:4000"), header("Sec-Fetch-Site", "same-site"),
+		header("Content-Type", "application/json"), header("Authorization", "Bearer 0123456789abcdef")}
+	if rec := serve(h, http.MethodPost, "/api/v1/tasks", `{"title":"x"}`, other...); rec.Code != http.StatusForbidden {
+		t.Errorf("未許可オリジン: status = %d, want 403", rec.Code)
+	}
+}
+
 func TestRoutes_APIKeyOnlyProtectsAPI(t *testing.T) {
 	h := newTestServer(t, config.Taskboard{APIKey: "0123456789abcdef"})
 	if rec := serve(h, http.MethodGet, "/api/v1/tasks", ""); rec.Code != http.StatusUnauthorized {
