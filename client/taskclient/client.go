@@ -1,5 +1,5 @@
-// Package taskclient は API サーバー（/api/v1）を呼び出すクライアント。
-// 画面アプリは DB を持たず、タスクの読み書きはすべてこのクライアント経由で行う。
+// Package taskclient は Task API（/api/v1）を呼び出すクライアント。
+// 画面アプリ（web）とターミナルのコマンド（tm）が使う。どちらも DB を持たず、タスクの読み書きはすべてこのクライアント経由で行う。
 package taskclient
 
 import (

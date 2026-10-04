@@ -4,21 +4,23 @@
 # シェルで mise を有効化していなくても、CI と同じバージョンが使われる。
 # .env があれば mise が環境変数として読み込む（設定項目は .env.example を参照）。
 #
-# リポジトリは go.work でまとめた複数の Go モジュールで構成する（api / web / insight / shared）。
+# リポジトリは go.work でまとめた複数の Go モジュールで構成する（api / web / insight / cli / client / shared）。
 # macOS 標準の GNU Make 3.81 でも動くように、新しい Make の機能は使わない。
 
 MISE ?= mise
 RUN := $(MISE) exec --
 SERVICE := $(RUN) bash scripts/service.sh
-MODULES := api web insight shared
+MODULES := api web insight cli client shared
+# tm コマンドのインストール先。PATH の通ったディレクトリを指定する（例: make install-cli PREFIX=/usr/local）。
+PREFIX ?= $(HOME)/.local
 # go.work のルートでは ./... が使えないため、モジュールごとのパターンを並べる。
 PACKAGES := $(addsuffix /...,$(addprefix ./,$(MODULES)))
 
 .DEFAULT_GOAL := help
-.PHONY: help start stop restart status logs build test lint fmt tidy
+.PHONY: help start stop restart status logs build test lint fmt tidy install-cli
 
 help: ## コマンド一覧を表示する
-	@awk 'BEGIN {FS = ":.*## "} /^[a-z]+:.*## / {printf "  make %-8s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*## "} /^[a-z-]+:.*## / {printf "  make %-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 start: ## api / insight / web をバックグラウンドで起動し、接続先を表示する
 	@$(SERVICE) start
@@ -50,6 +52,12 @@ lint: ## golangci-lint（モジュールごと）と shellcheck で静的解析�
 
 fmt: ## コードを整形する
 	@for m in $(MODULES); do (cd $$m && $(RUN) golangci-lint fmt) || exit 1; done
+
+install-cli: ## ターミナル用の tm コマンドを $(PREFIX)/bin にインストールする
+	@mkdir -p "$(PREFIX)/bin"
+	@$(RUN) go build -o "$(PREFIX)/bin/tm" ./cli/cmd/tm
+	@echo "tm を $(PREFIX)/bin/tm に インストールしました。 tm help で つかいかたを ひょうじします。"
+	@case ":$$PATH:" in *":$(PREFIX)/bin:"*) ;; *) echo "＊ $(PREFIX)/bin が PATH に ありません。 シェルの せっていに export PATH=\"$(PREFIX)/bin:\$$PATH\" を ついかしてください。";; esac
 
 tidy: ## 各モジュールの go.mod / go.sum を整理する
 	@for m in $(MODULES); do (cd $$m && $(RUN) go mod tidy) || exit 1; done

@@ -29,6 +29,38 @@ make start     # api / insight / web をバックグラウンドで起動し、�
 ブラウザで **http://127.0.0.1:3000** を開くとボードが表示されます。止めるときは `make stop` です。
 DB（SQLite）は初回起動時に `data/taskboard.db` に作られ、スキーマも自動で用意されます。
 
+## ターミナルから使う（tm）
+
+`tm` コマンドで、ターミナルからワンライナーでタスクを追加・操作できます（中身は API を呼ぶだけなので、画面にもすぐ反映されます）。
+
+```sh
+make install-cli          # ~/.local/bin/tm にインストール（PREFIX=/usr/local などで変更可）
+```
+
+```text
+$ tm add "Go を学ぶ" -e 30
+＊ 「Go を学ぶ」が あらわれた！ (#1)
+$ tm add htmx のドキュメントを読む -d "hx-swap-oob を中心に"   # 引用符なしでも OK
+＊ 「htmx のドキュメントを読む」が あらわれた！ (#2)
+$ tm ls
+しんちょく 0%（2こ のうち 0こ クリア）
+#1    [みちゃくしゅ] Go を学ぶ  もくひょう 30分
+#2    [みちゃくしゅ] htmx のドキュメントを読む
+$ tm start 1              # タイマーを かいし
+$ tm stop                 # 動いているタイマーを ていし（id は省略可）
+$ tm done 1               # クリア
+```
+
+| コマンド | 内容 |
+|---|---|
+| `tm add <なまえ> [-e 分] [-d せつめい]` | 追加（`-e` は目標時間。オプションは名前の前でも後でもよい） |
+| `tm ls [-a]` | 未完了の一覧と進捗（`-a` でクリア済みも） |
+| `tm start <id>` / `tm stop [id]` | タイマーの開始 / 停止 |
+| `tm done <id>` | クリア |
+
+- 接続先は `TM_API_URL`（既定 `http://127.0.0.1:8080`）、API キーは `TM_API_KEY`
+- 終了コード: 0 = 成功、1 = 失敗（API のエラー・接続できない）、2 = 使い方の誤り。スクリプトからも使えます
+
 ## 画面でできること
 
 | 画面 | できること |
@@ -62,7 +94,8 @@ DB（SQLite）は初回起動時に `data/taskboard.db` に作られ、スキー
 | `web` | `web/` | 画面（Go の html/template + htmx）。DB を持たず api を呼ぶ | http://127.0.0.1:3000 |
 | `insight` | `insight/` | 振り返りから「学んだこと / できなかったこと」を抽出する API | http://127.0.0.1:8081 |
 
-各ディレクトリは独立した Go モジュールで、`go.work` でまとめています。3つのサービスで共通の部品は `shared/` にあります。
+各ディレクトリは独立した Go モジュールで、`go.work` でまとめています。3つのサービスで共通の部品は `shared/` に、
+API を呼ぶクライアントは `client/`（web と `tm` で共有）にあります。ターミナル用の `tm` コマンドは `cli/` です。
 
 ## コマンド
 
@@ -79,6 +112,7 @@ DB（SQLite）は初回起動時に `data/taskboard.db` に作られ、スキー
 | `make lint` | golangci-lint（モジュールごと）と shellcheck |
 | `make fmt` / `make tidy` | コード整形 / 各モジュールの `go.mod` の整理 |
 | `make build` | `bin/` にビルド |
+| `make install-cli` | `tm` コマンドを `~/.local/bin` にインストール（`PREFIX` で変更） |
 
 起動は api → insight → web の順、停止はその逆順です。PID とログは `.run/` に保存されます（ログは起動のたびに作り直し）。
 
@@ -199,8 +233,10 @@ curl -X POST http://127.0.0.1:8081/api/v1/extract -H 'Content-Type: application/
 ```
 .
 ├── api/        Task API（cmd/api、internal/{config,db,task,httpapi,insightclient}、openapi.yaml）
-├── web/        画面（cmd/web、internal/{config,taskclient,board,character}）
+├── web/        画面（cmd/web、internal/{config,board,character}）
 ├── insight/    抽出 API（cmd/insight、internal/{config,extract,handler}、openapi.yaml）
+├── cli/        ターミナル用の tm コマンド（cmd/tm、internal/app）
+├── client/     API クライアント（taskclient。web と tm で共有）
 ├── shared/     共通部品（httpserver: 起動・/healthz・防御、envconf: 設定、jsonapi: JSON 応答とエラー形式）
 ├── scripts/    バックグラウンド起動・停止（service.sh）
 ├── SPEC.md     要件定義と決めた点

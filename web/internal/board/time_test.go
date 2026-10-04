@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kawafuchieirin/task-manager/web/internal/taskclient"
+	"github.com/kawafuchieirin/task-manager/client/taskclient"
 )
 
 func TestCard_ShowsEstimateActualAndDiff(t *testing.T) {

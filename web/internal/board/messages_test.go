@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kawafuchieirin/task-manager/web/internal/taskclient"
+	"github.com/kawafuchieirin/task-manager/client/taskclient"
 )
 
 // flashOOB はレスポンスに含まれる、メッセージウィンドウの out-of-band 差し替えを取り出す。

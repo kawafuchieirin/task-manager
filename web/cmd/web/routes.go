@@ -4,10 +4,10 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/kawafuchieirin/task-manager/client/taskclient"
 	"github.com/kawafuchieirin/task-manager/shared/httpserver"
 	"github.com/kawafuchieirin/task-manager/web/internal/board"
 	"github.com/kawafuchieirin/task-manager/web/internal/config"
-	"github.com/kawafuchieirin/task-manager/web/internal/taskclient"
 )
 
 // newHandler は画面アプリの全ルートを組み立てる。
