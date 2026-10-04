@@ -292,9 +292,15 @@ input:focus-visible, textarea:focus-visible { outline: none; border-color: var(-
 .card:has(.card__time--over) { border-color: var(--warn); }
 .card__diff { font-variant-numeric: tabular-nums; }
 
+/* 目標までの残り。超えたらオレンジで点滅し、カードの枠もオレンジにする（計測中の黄色より優先） */
+.card__countdown { flex-basis: 100%; color: var(--text); font-variant-numeric: tabular-nums; }
+.card__countdown--over { color: var(--warn); animation: blink 1s steps(2, start) infinite; }
+.card--running.card--overtime { border-color: var(--warn); }
+.notify-toggle[aria-pressed="false"] { color: var(--muted); }
+
 /* 計測中のタイマー */
 .card--running { border-color: var(--accent); }
-.card__timer { display: flex; align-items: center; gap: 6px; margin: 6px 0 0; color: var(--accent); font-size: 0.95rem; }
+.card__timer { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; margin: 6px 0 0; color: var(--accent); font-size: 0.95rem; white-space: nowrap; }
 .card__timer-clock { font-variant-numeric: tabular-nums; letter-spacing: 0.08em; }
 .card__timer-dot {
   width: 8px;
@@ -346,7 +352,7 @@ input:focus-visible, textarea:focus-visible { outline: none; border-color: var(-
 
 /* 動きを減らす設定の人には、点滅とゲージのアニメーションを止める */
 @media (prefers-reduced-motion: reduce) {
-  .button:hover::before, .button:focus-visible::before, .card__timer-dot, .flash::after { animation: none; }
+  .button:hover::before, .button:focus-visible::before, .card__timer-dot, .flash::after, .card__countdown--over { animation: none; }
   .progress__fill { transition: none; }
   /* キャラクターは最初のコマだけを止めて表示する */
   .character, .character *, .character *::before, .character *::after { animation: none !important; }
