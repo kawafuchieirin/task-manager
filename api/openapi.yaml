@@ -1,0 +1,674 @@
+openapi: 3.1.0
+info:
+  title: task-manager Task API
+  version: 1.0.0
+  summary: 自分専用のタスク管理（タスク・時間記録・振り返り）の REST API
+  description: |
+    画面アプリ（web）も、ほかのアプリも、この API だけでタスクを操作する。DB を持つのはこのサービスだけ。
+
+    - 日時はすべて RFC3339。応答は UTC（`Z`）で返し、リクエストはタイムゾーン付きなら何でも受け付ける
+    - 未設定の値は `null` で返す。一覧は 0 件でも空配列で返す
+    - リクエストボディは `Content-Type: application/json`、1MB まで。未知のフィールドはエラー（400）
+    - エラーは `{"error": {"code", "message", "details"}}` の形で返す。`code` は一度公開したら変更しない
+    - サーバーの `API_KEY` を設定している場合は、`/api/v1` に `Authorization: Bearer <キー>` が必要
+    - 待ち受けはループバックのみ。`Host` が localhost / 127.0.0.1 / ::1 以外だと 421（平文）、
+      他サイトのブラウザからの送信は 403（平文。`API_CORS_ORIGINS` に登録したオリジンは許可）
+  license:
+    name: 未定（個人利用）
+    identifier: LicenseRef-Proprietary
+servers:
+  - url: http://127.0.0.1:8080
+    description: 既定（`API_ADDR` で変更できる）
+security:
+  - {}
+  - bearerAuth: []
+tags:
+  - name: tasks
+    description: タスク
+  - name: timer
+    description: タイマーと時間記録
+  - name: reflections
+    description: 振り返り（insight で「学んだこと / できなかったこと」を抽出）
+  - name: meta
+    description: 死活監視・仕様書
+
+paths:
+  /healthz:
+    get:
+      tags: [meta]
+      operationId: healthz
+      summary: 死活監視（DB に接続できるか）
+      security: []
+      responses:
+        "200":
+          description: 正常
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+              example: { status: ok }
+        "421":
+          description: "`Host` が localhost / 127.0.0.1 / ::1 以外（DNS リバインディング対策。平文。全パス共通）"
+          content:
+            text/plain:
+              schema: { type: string }
+        "503":
+          description: DB に接続できない
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+              example: { status: unavailable }
+
+  /api/v1/openapi.yaml:
+    get:
+      tags: [meta]
+      operationId: getOpenAPI
+      summary: この仕様書
+      responses:
+        "200":
+          description: OpenAPI 3.1 の仕様書（YAML）
+          content:
+            application/yaml:
+              schema: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/v1/tasks:
+    get:
+      tags: [tasks]
+      operationId: listTasks
+      summary: タスクの一覧（作成順）
+      parameters:
+        - name: status
+          in: query
+          description: ステータスで絞り込む
+          schema: { $ref: "#/components/schemas/Status" }
+      responses:
+        "200":
+          description: タスクの一覧
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [tasks]
+                properties:
+                  tasks:
+                    type: array
+                    items: { $ref: "#/components/schemas/Task" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+    post:
+      tags: [tasks]
+      operationId: createTask
+      summary: タスクを作成
+      description: "`status` を `done` で作ると `completed_at` を記録する。"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TaskCreate" }
+            example: { title: Go を学ぶ, estimated_min: 90 }
+      responses:
+        "201":
+          description: 作成したタスク
+          headers:
+            Location:
+              description: 作成したタスクの URL（例 `/api/v1/tasks/1`）
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Task" }
+        "400": { $ref: "#/components/responses/InvalidJSON" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /api/v1/tasks/{id}:
+    parameters:
+      - $ref: "#/components/parameters/TaskID"
+    get:
+      tags: [tasks]
+      operationId: getTask
+      summary: タスクを取得
+      responses:
+        "200":
+          description: タスク
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Task" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [tasks]
+      operationId: updateTask
+      summary: タスクを部分更新
+      description: |
+        送らなかった項目は変わらない。`estimated_min` に `null` を送ると未設定に戻す（ほかの項目の `null` は「変更しない」）。
+        `done` にすると `completed_at` を記録し、計測中のタイマーを止める。`done` から戻すと `completed_at` を消す。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TaskUpdate" }
+            example: { status: done }
+      responses:
+        "200":
+          description: 更新後のタスク
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Task" }
+        "400": { $ref: "#/components/responses/InvalidJSON" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+    delete:
+      tags: [tasks]
+      operationId: deleteTask
+      summary: タスクを削除（時間記録・振り返りも削除）
+      responses:
+        "204": { description: 削除した }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/stats/summary:
+    get:
+      tags: [tasks]
+      operationId: getSummary
+      summary: 進捗と時間の合計
+      responses:
+        "200":
+          description: 進捗
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Summary" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/v1/tasks/{id}/timer/start:
+    parameters:
+      - $ref: "#/components/parameters/TaskID"
+    post:
+      tags: [timer]
+      operationId: startTimer
+      summary: タイマーを開始
+      description: |
+        同時に動かせるタイマーは全体で1つ。未着手（todo）のタスクは進行中（doing）にする。
+        別のタスクのタイマーが動いていれば `timer_already_running`、完了したタスクなら `task_completed`（いずれも 409）。
+      responses:
+        "201":
+          description: 開始した（計測中の）区間
+          headers:
+            Location:
+              description: 区間の URL（例 `/api/v1/time-entries/1`）
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TimeEntry" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/tasks/{id}/timer/stop:
+    parameters:
+      - $ref: "#/components/parameters/TaskID"
+    post:
+      tags: [timer]
+      operationId: stopTimer
+      summary: タイマーを停止
+      description: タイマーが動いていなければ `timer_not_running`（409）。
+      responses:
+        "200":
+          description: 確定した区間
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TimeEntry" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/tasks/{id}/time-entries:
+    parameters:
+      - $ref: "#/components/parameters/TaskID"
+    get:
+      tags: [timer]
+      operationId: listTimeEntries
+      summary: タスクの時間記録の一覧（開始時刻の順）
+      responses:
+        "200":
+          description: 時間記録の一覧
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [time_entries]
+                properties:
+                  time_entries:
+                    type: array
+                    items: { $ref: "#/components/schemas/TimeEntry" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [timer]
+      operationId: addTimeEntry
+      summary: 終了済みの区間を手動で追加
+      description: "「終了 > 開始」「24時間以内」「終了が未来でない」こと。区間どうしの重なりは検査しない。"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TimeEntryCreate" }
+            example: { started_at: "2026-10-03T19:00:00+09:00", ended_at: "2026-10-03T19:45:00+09:00" }
+      responses:
+        "201":
+          description: 追加した区間
+          headers:
+            Location:
+              description: 区間の URL
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TimeEntry" }
+        "400": { $ref: "#/components/responses/InvalidJSON" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /api/v1/time-entries/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: 時間記録の ID
+        schema: { type: integer, format: int64, minimum: 1 }
+    get:
+      tags: [timer]
+      operationId: getTimeEntry
+      summary: 時間記録を取得
+      responses:
+        "200":
+          description: 時間記録
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TimeEntry" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [timer]
+      operationId: updateTimeEntry
+      summary: 終了済みの区間の開始・終了時刻を修正
+      description: 計測中の区間は修正できない（`entry_running`、409）。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TimeEntryUpdate" }
+      responses:
+        "200":
+          description: 修正後の区間
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TimeEntry" }
+        "400": { $ref: "#/components/responses/InvalidJSON" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+    delete:
+      tags: [timer]
+      operationId: deleteTimeEntry
+      summary: 時間記録を削除（計測中の区間を削除するとタイマーの取り消し）
+      responses:
+        "204": { description: 削除した }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/tasks/{id}/reflection:
+    parameters:
+      - $ref: "#/components/parameters/TaskID"
+    get:
+      tags: [reflections]
+      operationId: getReflection
+      summary: 振り返りを取得
+      responses:
+        "200":
+          description: 振り返り
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Reflection" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [reflections]
+      operationId: saveReflection
+      summary: 振り返りを登録（上書き）し、insight で抽出
+      description: |
+        insight に接続できなくても登録は成功し（200）、`extract_status` が `failed` になる。
+        `/reflection/extract` でやり直せる。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReflectionSave" }
+            example: { body: "goroutine の使い方を理解した。\n- テストの書き方" }
+      responses:
+        "200":
+          description: 登録した振り返り
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Reflection" }
+        "400": { $ref: "#/components/responses/InvalidJSON" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+    delete:
+      tags: [reflections]
+      operationId: deleteReflection
+      summary: 振り返りを削除
+      responses:
+        "204": { description: 削除した }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/tasks/{id}/reflection/extract:
+    parameters:
+      - $ref: "#/components/parameters/TaskID"
+    post:
+      tags: [reflections]
+      operationId: extractReflection
+      summary: 抽出をやり直す（insight が止まっていて失敗したとき）
+      responses:
+        "200":
+          description: 抽出後の振り返り（insight に接続できなければ `extract_status` は `failed` のまま）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Reflection" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/reflections:
+    get:
+      tags: [reflections]
+      operationId: listReflections
+      summary: 期間内の振り返り（更新日時の新しい順）
+      parameters:
+        - name: from
+          in: query
+          description: この日時以降（RFC3339。省略すると制限なし）
+          schema: { type: string, format: date-time }
+          example: "2026-10-01T00:00:00+09:00"
+        - name: to
+          in: query
+          description: この日時より前（RFC3339。省略すると制限なし）
+          schema: { type: string, format: date-time }
+          example: "2026-10-08T00:00:00+09:00"
+      responses:
+        "200":
+          description: 振り返りの一覧
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [reflections]
+                properties:
+                  reflections:
+                    type: array
+                    items: { $ref: "#/components/schemas/ReflectionEntry" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: サーバーに `API_KEY` を設定したときだけ必要（スキーム名の大文字小文字は問わない）
+
+  parameters:
+    TaskID:
+      name: id
+      in: path
+      required: true
+      description: タスクの ID
+      schema: { type: integer, format: int64, minimum: 1 }
+
+  schemas:
+    Status:
+      type: string
+      enum: [todo, doing, done]
+      description: todo = 未着手、doing = 進行中、done = 完了
+
+    Task:
+      type: object
+      required: [id, title, description, status, estimated_min, completed_at, created_at, updated_at, actual_sec, running_since, reflection]
+      properties:
+        id: { type: integer, format: int64 }
+        title: { type: string, minLength: 1, maxLength: 100 }
+        description: { type: string, maxLength: 2000 }
+        status: { $ref: "#/components/schemas/Status" }
+        estimated_min:
+          description: 目標時間（分）。未設定なら null
+          type: [integer, "null"]
+          minimum: 0
+          maximum: 10080
+        completed_at:
+          description: 完了日時。未完了なら null
+          type: [string, "null"]
+          format: date-time
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        actual_sec:
+          description: 実績時間の合計（秒）。計測中の区間は応答した時点までを含む
+          type: integer
+          format: int64
+          minimum: 0
+        running_since:
+          description: 計測中のタイマーの開始時刻。動いていなければ null
+          type: [string, "null"]
+          format: date-time
+        reflection:
+          description: 振り返り。書いていなければ null
+          oneOf:
+            - $ref: "#/components/schemas/Reflection"
+            - type: "null"
+
+    TaskCreate:
+      type: object
+      additionalProperties: false
+      required: [title]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 100, description: 前後の空白は除く }
+        description: { type: string, maxLength: 2000 }
+        status: { $ref: "#/components/schemas/Status" }
+        estimated_min: { type: [integer, "null"], minimum: 0, maximum: 10080 }
+
+    TaskUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        title: { type: [string, "null"], minLength: 1, maxLength: 100, description: null は「変更しない」 }
+        description: { type: [string, "null"], maxLength: 2000, description: null は「変更しない」 }
+        status:
+          description: null は「変更しない」
+          oneOf:
+            - $ref: "#/components/schemas/Status"
+            - type: "null"
+        estimated_min: { type: [integer, "null"], minimum: 0, maximum: 10080, description: null で未設定に戻す }
+
+    Summary:
+      type: object
+      required: [total, done, progress_percent, estimated_min, actual_sec]
+      properties:
+        total: { type: integer }
+        done: { type: integer }
+        progress_percent:
+          description: 完了率（切り捨て。100 は全件完了のときだけ、0 件なら 0）
+          type: integer
+          minimum: 0
+          maximum: 100
+        estimated_min: { type: integer, description: 目標時間の合計（分。未設定のタスクは数えない） }
+        actual_sec: { type: integer, format: int64, description: 実績時間の合計（秒） }
+
+    TimeEntry:
+      type: object
+      required: [id, task_id, started_at, ended_at, duration_sec]
+      properties:
+        id: { type: integer, format: int64 }
+        task_id: { type: integer, format: int64 }
+        started_at: { type: string, format: date-time }
+        ended_at:
+          description: 終了時刻。計測中なら null
+          type: [string, "null"]
+          format: date-time
+        duration_sec: { type: integer, format: int64, description: 区間の長さ（秒。計測中は応答した時点まで） }
+
+    TimeEntryCreate:
+      type: object
+      additionalProperties: false
+      required: [started_at, ended_at]
+      properties:
+        started_at: { type: string, format: date-time }
+        ended_at: { type: string, format: date-time }
+
+    TimeEntryUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        started_at: { type: string, format: date-time }
+        ended_at: { type: string, format: date-time }
+
+    ExtractStatus:
+      type: string
+      enum: [pending, ok, failed]
+      description: pending = 抽出中、ok = 抽出済み、failed = insight に接続できず失敗
+
+    Reflection:
+      type: object
+      required: [task_id, body, learned, not_learned, extract_status, updated_at]
+      properties:
+        task_id: { type: integer, format: int64 }
+        body: { type: string, maxLength: 5000 }
+        learned: { type: array, items: { type: string }, description: 学んだこと（抽出に成功するまでは空） }
+        not_learned: { type: array, items: { type: string }, description: できなかったこと（抽出に成功するまでは空） }
+        extract_status: { $ref: "#/components/schemas/ExtractStatus" }
+        updated_at: { type: string, format: date-time }
+
+    ReflectionEntry:
+      allOf:
+        - $ref: "#/components/schemas/Reflection"
+        - type: object
+          required: [task_title, task_status]
+          properties:
+            task_title: { type: string }
+            task_status: { $ref: "#/components/schemas/Status" }
+
+    ReflectionSave:
+      type: object
+      additionalProperties: false
+      required: [body]
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 5000
+          description: |
+            自由記述。「+」で始まる行は学んだこと、「-」で始まる行はできなかったこと。
+            見出し（「学んだこと」「課題」など）やキーワード（「理解した」「まだ」など）でも分類する
+
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [ok, unavailable] }
+
+    FieldError:
+      type: object
+      required: [field, code, message]
+      properties:
+        field: { type: string, description: 項目名（title / estimated_min / ended_at / body / from など） }
+        code:
+          type: string
+          description: 違反の種類（独自の文言を出すときに使う）
+          enum: [required, too_long, invalid, out_of_range, not_after_start, in_future]
+        message: { type: string, description: 人が読むための説明 }
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: エラーの種類
+              enum:
+                - invalid_json
+                - unauthorized
+                - not_found
+                - method_not_allowed
+                - timer_already_running
+                - timer_not_running
+                - task_completed
+                - entry_running
+                - payload_too_large
+                - unsupported_media_type
+                - validation_failed
+                - internal_error
+            message: { type: string }
+            details:
+              type: array
+              items: { $ref: "#/components/schemas/FieldError" }
+              description: validation_failed のときの項目ごとの理由
+
+  responses:
+    InvalidJSON:
+      description: JSON の構文・型の誤り、未知のフィールド（`invalid_json`）
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: API キーが無い・違う（`unauthorized`。サーバーに `API_KEY` を設定したときだけ）
+      headers:
+        WWW-Authenticate:
+          schema: { type: string }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: 対象が存在しない（`not_found`）
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Conflict:
+      description: 状態の衝突（`timer_already_running` / `timer_not_running` / `task_completed` / `entry_running`）
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    PayloadTooLarge:
+      description: ボディが 1MB を超えている（`payload_too_large`）
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    UnsupportedMediaType:
+      description: "`Content-Type: application/json` でない（`unsupported_media_type`）"
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ValidationFailed:
+      description: 入力値の検証エラー（`validation_failed`。`details` に項目ごとの理由）
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            error:
+              code: validation_failed
+              message: 入力値が不正です
+              details:
+                - { field: title, code: required, message: タイトルを入力してください }
