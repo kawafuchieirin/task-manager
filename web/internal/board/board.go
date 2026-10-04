@@ -17,8 +17,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kawafuchieirin/task-manager/client/taskclient"
 	"github.com/kawafuchieirin/task-manager/web/internal/character"
-	"github.com/kawafuchieirin/task-manager/web/internal/taskclient"
 )
 
 //go:embed templates/*.html

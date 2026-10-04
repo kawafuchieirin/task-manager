@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kawafuchieirin/task-manager/web/internal/taskclient"
+	"github.com/kawafuchieirin/task-manager/client/taskclient"
 )
 
 func TestCharacter_Status(t *testing.T) {

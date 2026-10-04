@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kawafuchieirin/task-manager/web/internal/taskclient"
+	"github.com/kawafuchieirin/task-manager/client/taskclient"
 )
 
 // reflectForm は振り返りの入力パネルの表示内容。

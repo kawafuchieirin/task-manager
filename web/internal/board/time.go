@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kawafuchieirin/task-manager/web/internal/taskclient"
+	"github.com/kawafuchieirin/task-manager/client/taskclient"
 )
 
 // maxManualMinutes は手動で追加できる作業時間の上限（API の1区間の上限 24 時間に合わせる）。

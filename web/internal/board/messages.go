@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/kawafuchieirin/task-manager/client/taskclient"
 	"github.com/kawafuchieirin/task-manager/web/internal/character"
-	"github.com/kawafuchieirin/task-manager/web/internal/taskclient"
 )
 
 // 画面に出す文言はこのファイルに集める。

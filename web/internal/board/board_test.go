@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kawafuchieirin/task-manager/web/internal/taskclient"
+	"github.com/kawafuchieirin/task-manager/client/taskclient"
 )
 
 func newTestHandler(t *testing.T) (*Handler, *fakeAPI) {
