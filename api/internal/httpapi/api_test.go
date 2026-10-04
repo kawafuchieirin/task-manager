@@ -108,7 +108,7 @@ func TestCreateTask_JSONShape(t *testing.T) {
 
 	// 他のアプリが依存する公開フォーマットなので、キー名と null の出し方を固定する。
 	raw := decode[map[string]any](t, rec)
-	for _, key := range []string{"id", "title", "description", "status", "estimated_min", "completed_at", "created_at", "updated_at",
+	for _, key := range []string{"id", "title", "description", "goal", "status", "estimated_min", "completed_at", "created_at", "updated_at",
 		"actual_sec", "running_since", "reflection"} {
 		if _, ok := raw[key]; !ok {
 			t.Errorf("キー %q がない: %v", key, raw)
@@ -331,5 +331,26 @@ func TestUpdateTask_NullAndEmpty(t *testing.T) {
 	assertStatus(t, rec, http.StatusOK)
 	if got := decode[taskResponse](t, rec); got.Title != "t" || got.Description != "d" {
 		t.Errorf("空の PATCH では何も変わらないはず: %+v", got)
+	}
+}
+
+func TestGoalAPI(t *testing.T) {
+	h := newTestHandler(t, Options{})
+	rec := do(t, h, http.MethodPost, "/api/v1/tasks", `{"title":"Go を学ぶ","goal":"練習問題を3問解く"}`)
+	assertStatus(t, rec, http.StatusCreated)
+	if got := decode[taskResponse](t, rec); got.Goal != "練習問題を3問解く" {
+		t.Errorf("goal = %q", got.Goal)
+	}
+
+	rec = do(t, h, http.MethodPatch, "/api/v1/tasks/1", `{"goal":"Tour を最後まで"}`)
+	assertStatus(t, rec, http.StatusOK)
+	if got := decode[taskResponse](t, rec); got.Goal != "Tour を最後まで" || got.Title != "Go を学ぶ" {
+		t.Errorf("PATCH: %+v", got)
+	}
+
+	detail := assertErrorCode(t, do(t, h, http.MethodPost, "/api/v1/tasks", `{"title":"t","goal":"`+strings.Repeat("a", 501)+`"}`),
+		http.StatusUnprocessableEntity, codeValidationFailed)
+	if len(detail.Details) != 1 || detail.Details[0].Field != "goal" || detail.Details[0].Code != "too_long" {
+		t.Errorf("details: %+v", detail.Details)
 	}
 }

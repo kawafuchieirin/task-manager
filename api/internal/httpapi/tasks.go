@@ -13,6 +13,7 @@ type taskResponse struct {
 	ID           int64       `json:"id"`
 	Title        string      `json:"title"`
 	Description  string      `json:"description"`
+	Goal         string      `json:"goal"`
 	Status       task.Status `json:"status"`
 	EstimatedMin *int        `json:"estimated_min"`
 	CompletedAt  *time.Time  `json:"completed_at"`
@@ -29,6 +30,7 @@ func toTaskResponse(t task.Task) taskResponse {
 		ID:           t.ID,
 		Title:        t.Title,
 		Description:  t.Description,
+		Goal:         t.Goal,
 		Status:       t.Status,
 		EstimatedMin: t.EstimatedMin,
 		CompletedAt:  t.CompletedAt,
@@ -47,6 +49,7 @@ func toTaskResponse(t task.Task) taskResponse {
 type createTaskRequest struct {
 	Title        string      `json:"title"`
 	Description  string      `json:"description"`
+	Goal         string      `json:"goal"`
 	Status       task.Status `json:"status"`
 	EstimatedMin *int        `json:"estimated_min"`
 }
@@ -54,6 +57,7 @@ type createTaskRequest struct {
 type updateTaskRequest struct {
 	Title        *string            `json:"title"`
 	Description  *string            `json:"description"`
+	Goal         *string            `json:"goal"`
 	Status       *task.Status       `json:"status"`
 	EstimatedMin task.Nullable[int] `json:"estimated_min"`
 }
@@ -97,6 +101,7 @@ func (h *taskHandler) create(w http.ResponseWriter, r *http.Request) {
 	created, err := h.svc.Create(r.Context(), task.CreateInput{
 		Title:        req.Title,
 		Description:  req.Description,
+		Goal:         req.Goal,
 		Status:       req.Status,
 		EstimatedMin: req.EstimatedMin,
 	})
@@ -133,6 +138,7 @@ func (h *taskHandler) update(w http.ResponseWriter, r *http.Request) {
 	updated, err := h.svc.Update(r.Context(), id, task.UpdateInput{
 		Title:        req.Title,
 		Description:  req.Description,
+		Goal:         req.Goal,
 		Status:       req.Status,
 		EstimatedMin: req.EstimatedMin,
 	})

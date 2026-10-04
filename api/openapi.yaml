@@ -105,7 +105,7 @@ paths:
         content:
           application/json:
             schema: { $ref: "#/components/schemas/TaskCreate" }
-            example: { title: Go を学ぶ, estimated_min: 90 }
+            example: { title: Go を学ぶ, goal: A Tour of Go を最後まで終える, estimated_min: 90 }
       responses:
         "201":
           description: 作成したタスク
@@ -445,11 +445,12 @@ components:
 
     Task:
       type: object
-      required: [id, title, description, status, estimated_min, completed_at, created_at, updated_at, actual_sec, running_since, reflection]
+      required: [id, title, description, goal, status, estimated_min, completed_at, created_at, updated_at, actual_sec, running_since, reflection]
       properties:
         id: { type: integer, format: int64 }
         title: { type: string, minLength: 1, maxLength: 100 }
         description: { type: string, maxLength: 2000 }
+        goal: { type: string, maxLength: 500, description: ゴール（何ができたら完了か）。未設定なら空文字 }
         status: { $ref: "#/components/schemas/Status" }
         estimated_min:
           description: 目標時間（分）。未設定なら null
@@ -484,6 +485,7 @@ components:
       properties:
         title: { type: string, minLength: 1, maxLength: 100, description: 前後の空白は除く }
         description: { type: string, maxLength: 2000 }
+        goal: { type: string, maxLength: 500, description: ゴール（何ができたら完了か）。前後の空白は除く }
         status: { $ref: "#/components/schemas/Status" }
         estimated_min: { type: [integer, "null"], minimum: 0, maximum: 10080 }
 
@@ -493,6 +495,7 @@ components:
       properties:
         title: { type: [string, "null"], minLength: 1, maxLength: 100, description: null は「変更しない」 }
         description: { type: [string, "null"], maxLength: 2000, description: null は「変更しない」 }
+        goal: { type: [string, "null"], maxLength: 500, description: 空文字でゴールを消す。null は「変更しない」 }
         status:
           description: null は「変更しない」
           oneOf:
@@ -590,7 +593,7 @@ components:
       type: object
       required: [field, code, message]
       properties:
-        field: { type: string, description: 項目名（title / estimated_min / ended_at / body / from など） }
+        field: { type: string, description: 項目名（title / goal / estimated_min / ended_at / body / from など） }
         code:
           type: string
           description: 違反の種類（独自の文言を出すときに使う）
