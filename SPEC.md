@@ -178,6 +178,7 @@ tasks
   id               INTEGER PK
   title            TEXT NOT NULL
   description      TEXT NOT NULL DEFAULT ''
+  goal             TEXT NOT NULL DEFAULT ''   -- 0002 で追加。500 文字まで（何ができたら完了か）
   status           TEXT NOT NULL CHECK (status IN ('todo','doing','done'))
   estimated_min    INTEGER NULL CHECK (estimated_min >= 0)
   completed_at     TEXT NULL
