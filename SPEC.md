@@ -236,9 +236,10 @@ reflections
 │   ├── cmd/web/
 │   └── internal/
 │       ├── config/         # WEB_* 環境変数
-│       ├── taskclient/     # api を呼ぶクライアント（タイムアウト・リトライ）
 │       ├── board/          # HTML ハンドラ・テンプレート・静的ファイル（htmx.min.js、CSS、ドット絵スプライトを embed）
 │       └── character/      # キャラクター（ピコ）のレベル・表情の判定とドット絵（SVG）
+├── cli/                    # ターミナル用の tm コマンド（cmd/tm、internal/app）
+├── client/                 # API クライアント taskclient（タイムアウト・リトライ。web と tm で共有）
 ├── insight/                # 抽出 API（DB を持たない）
 │   ├── cmd/insight/
 │   └── internal/
@@ -252,6 +253,13 @@ reflections
 │   └── envconf/            # 環境変数の読み込みとループバック限定の検証
 └── data/                   # SQLite ファイル（.gitignore で除外）
 ```
+
+## 8.1 ターミナルのコマンド（tm）（追加: 2026-10-04）
+
+- ターミナルからワンライナーでタスクを追加・操作する `tm` コマンド（`cli/`）。`tm add "名前" -e 30`、`tm ls`、`tm start` / `tm stop`、`tm done`
+- API を呼ぶだけ（DB は持たない）。API クライアントは web と共有するため `client/` モジュール（`taskclient`）に切り出した
+- 接続先は `TM_API_URL`、キーは `TM_API_KEY`。終了コードは 0 成功 / 1 失敗 / 2 使い方の誤り
+- `make install-cli` で `$(PREFIX)/bin/tm`（既定 `~/.local/bin`）にインストールする
 
 ## 9. 未決事項
 
