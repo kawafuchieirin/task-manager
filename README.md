@@ -75,6 +75,7 @@ DB は初回起動時に `data/taskboard.db` に作成され、マイグレー�
 | `API_DB_PATH` | `data/taskboard.db` | SQLite ファイルのパス |
 | `API_KEY` | （なし） | 設定すると `/api/v1` に `Authorization: Bearer <キー>` を要求する（16文字以上） |
 | `API_CORS_ORIGINS` | （なし） | ブラウザから API を直接呼ぶ他のアプリのオリジン（カンマ区切り。例: `http://localhost:5173`）。web はサーバー間で呼ぶので登録不要 |
+| `API_INSIGHT_URL` | `http://127.0.0.1:8081` | api が振り返りの抽出を頼む insight の URL |
 | `WEB_ADDR` | `127.0.0.1:3000` | web の待ち受けアドレス |
 | `WEB_API_URL` | `http://127.0.0.1:8080` | web が呼び出す api の URL |
 | `WEB_API_KEY` | （なし） | `API_KEY` を設定した場合に同じ値を指定する |
@@ -106,6 +107,11 @@ curl -X POST http://127.0.0.1:8080/api/v1/tasks/1/time-entries \
   -H 'Content-Type: application/json' \
   -d '{"started_at": "2026-10-03T19:00:00+09:00", "ended_at": "2026-10-03T19:45:00+09:00"}'
 
+# 振り返り（「+」で始まる行は学んだこと、「-」で始まる行はできなかったこと。「理解した」「まだ」などの言葉でも分類）
+curl -X PUT http://127.0.0.1:8080/api/v1/tasks/1/reflection \
+  -H 'Content-Type: application/json' -d '{"body": "goroutine を理解した。\n- テストの書き方"}'
+# {"task_id":1,"body":"...","learned":["goroutine を理解した"],"not_learned":["テストの書き方"],"extract_status":"ok",...}
+
 # 進捗と時間の合計
 curl http://127.0.0.1:8080/api/v1/stats/summary
 # {"total":1,"done":1,"progress_percent":100,"estimated_min":90,"actual_sec":2700}
@@ -121,9 +127,13 @@ curl http://127.0.0.1:8080/api/v1/stats/summary
 | GET / POST | `/api/v1/tasks/{id}/time-entries` | 時間記録の一覧 / 手動追加 |
 | GET / PATCH / DELETE | `/api/v1/time-entries/{id}` | 時間記録の取得 / 修正 / 削除（計測中の区間を削除するとタイマーの取り消し） |
 | GET | `/api/v1/stats/summary` | 進捗（完了件数・完了率）と目標・実績時間の合計 |
+| GET / PUT / DELETE | `/api/v1/tasks/{id}/reflection` | 振り返りの取得 / 登録（insight で抽出）/ 削除 |
+| POST | `/api/v1/tasks/{id}/reflection/extract` | 抽出のやり直し（insight が止まっていて失敗したとき） |
+| GET | `/api/v1/reflections?from=&to=` | 期間内の振り返り（RFC3339。from 以上 to 未満、省略可） |
 
 - 日時は UTC の RFC3339、未設定の値は `null` で返します。送るときはタイムゾーン付きなら何でも受け付けます
 - タスクには `actual_sec`（実績時間の合計秒。計測中の区間は応答時点まで）と `running_since`（計測中タイマーの開始時刻）が付きます
+- タスクには `reflection`（振り返り。無ければ `null`）も付きます。振り返りの抽出に insight が失敗しても登録は 200 で成功し、`extract_status` が `failed` になります（`/reflection/extract` でやり直し）
 - タスクを完了にすると、計測中のタイマーは自動で止まります。時間記録は「終了 > 開始」「24時間以内」「終了が未来でない」ことが必要です
 - PATCH は部分更新です。送らなかった項目は変わりません
   - `"estimated_min": null` を送ると目標時間を未設定に戻せます
@@ -154,6 +164,23 @@ API の手前の防御で拒否された場合は、JSON ではなく平文で�
 |---|---|
 | 403 | 他サイトのブラウザからの送信（CSRF 対策）。`API_CORS_ORIGINS` に登録すると許可される |
 | 421 | `Host` ヘッダーが `localhost` / `127.0.0.1` / `::1` 以外（DNS リバインディング対策） |
+
+## 抽出 API（insight）
+
+振り返りのテキストから「学んだこと」と「できなかったこと」を抽出する API です。DB を持たず、他のアプリからも単体で使えます。
+
+```sh
+curl -X POST http://127.0.0.1:8081/api/v1/extract \
+  -H 'Content-Type: application/json' \
+  -d '{"text": "goroutine の使い方を理解した。テストの書き方はまだ曖昧。"}'
+# {"learned":["goroutine の使い方を理解した"],"not_learned":["テストの書き方はまだ曖昧"]}
+```
+
+分類のルール（ルールベース。`insight/internal/extract`）:
+
+1. 見出し（「学んだこと」「できなかったこと」「課題」など）の下の行は、その見出しの分類
+2. 見出しの外で `+` / `-` で始まる行（全角も可）
+3. それ以外の文はキーワードで分類（否定を先に判定）。どれにも当たらない文は捨てる
 
 ## 開発コマンド
 

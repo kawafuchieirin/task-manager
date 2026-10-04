@@ -102,8 +102,14 @@
 - タスクを完了するときに振り返りメモ（自由記述）を入力できる（任意）
 - api は振り返りメモを insight API に送り、抽出結果を保存する。web はそれを表示する
 - 振り返り一覧画面で、期間ごとの「学んだこと / できなかったこと」を一覧で表示する
-- 抽出の方式は**ルールベース**とする（2026-10-03 決定）。「学んだこと」「できなかったこと」の2つの入力欄、または `+` / `-` で始まる行で分類する
-- 将来 LLM による抽出を追加できるよう、抽出処理は `Extractor` インターフェースで差し替えられる設計にする（API の入出力は変えない）
+- 抽出の方式は**ルールベース**とする（2026-10-03 決定）。将来 LLM による抽出を追加できるよう、抽出処理は `Extractor` インターフェースで差し替えられる設計にする（API の入出力は変えない）
+- 細かな決まり（M4 で決定）
+  - 入力は1つの自由記述。次の順に分類する: ① 見出し（「学んだこと」「できなかったこと」「課題」など）の下の行 → その見出しの分類 ② 見出しの外で `+` / `-`（全角も可）で始まる行 ③ それ以外の文はキーワード（「理解した」「わかった」→ 学んだこと、「できなかった」「まだ」「難しかった」→ できなかったこと。否定を先に判定）。どれにも当たらない文は捨てる
+  - 抽出結果は文をそのまま返す（語尾の言い換えはしない）。重複は1つにまとめる
+  - 振り返りは1タスクに1つ（上書き）。最大 5000 文字
+  - insight の呼び出しはタイムアウト 5 秒・指数バックオフで最大2回リトライ。失敗しても振り返りは保存し `extract_status=failed` にする。画面の「もういちど」でやり直せる
+  - 抽出はネットワーク越しなので DB のトランザクションの外で行い、抽出中に本文が書き換えられていたら古い結果で上書きしない
+  - 画面ではクリアしたときに振り返りのパネルを開く。振り返りのページは「きょう / この1しゅうかん / この1かげつ / ぜんぶ」で絞り込む（JST の日付で区切る）
 
 ### F6. ドット絵キャラクターの演出
 
@@ -133,8 +139,9 @@
 | GET | `/api/v1/tasks/{id}/time-entries` | 時間区間の一覧 |
 | POST | `/api/v1/tasks/{id}/time-entries` | 時間区間を手動で追加 |
 | GET / PATCH / DELETE | `/api/v1/time-entries/{id}` | 時間区間の取得・修正・削除 |
-| PUT | `/api/v1/tasks/{id}/reflection` | 振り返りメモの登録（insight での抽出を実行する） |
-| GET | `/api/v1/reflections?from=&to=` | 期間内の抽出結果一覧 |
+| GET / PUT / DELETE | `/api/v1/tasks/{id}/reflection` | 振り返りの取得 / 登録（insight での抽出を実行する）/ 削除 |
+| POST | `/api/v1/tasks/{id}/reflection/extract` | 抽出のやり直し |
+| GET | `/api/v1/reflections?from=&to=` | 期間内の抽出結果一覧（RFC3339、from 以上 to 未満） |
 | GET | `/api/v1/stats/summary` | 進捗率、目標/実績時間の合計、キャラクターのレベル |
 | GET | `/healthz` | ヘルスチェック |
 
@@ -149,8 +156,8 @@
 // POST /api/v1/extract
 // request
 { "text": "goroutine の使い方を理解した。テストの書き方はまだ曖昧。" }
-// response 200
-{ "learned": ["goroutine の使い方"], "not_learned": ["テストの書き方"] }
+// response 200（文をそのまま返す。0件でも空配列）
+{ "learned": ["goroutine の使い方を理解した"], "not_learned": ["テストの書き方はまだ曖昧"] }
 ```
 
 ## 6. データモデル（SQLite）
@@ -211,10 +218,9 @@ reflections
 │   ├── internal/
 │   │   ├── config/         # API_* 環境変数
 │   │   ├── db/             # SQLite 接続・マイグレーション（migrations/*.sql を embed）
-│   │   ├── task/           # ドメインモデル・検証・永続化、タイマーと時間記録（timer.go）
+│   │   ├── task/           # ドメインモデル・検証・永続化、タイマーと時間記録（timer.go）、振り返り（reflection.go）
 │   │   ├── httpapi/        # JSON の REST API（/api/v1）、API キー認証、CORS
-│   │   ├── reflection/     # （M4）
-│   │   └── insightclient/  # （M4）api から insight を呼ぶクライアント
+│   │   └── insightclient/  # api から insight を呼ぶクライアント（タイムアウト・リトライ）
 │   └── openapi.yaml        # （M6）
 ├── web/                    # 画面アプリ（DB を持たない）
 │   ├── cmd/web/
@@ -227,9 +233,11 @@ reflections
 │   ├── cmd/insight/
 │   └── internal/
 │       ├── config/         # INSIGHT_* 環境変数
-│       └── extract/        # （M4）抽出ロジック（Extractor インターフェース）
+│       ├── extract/        # 抽出ロジック（Extractor インターフェース、ルールベースの実装）
+│       └── handler/        # 抽出 API（/api/v1/extract）
 ├── shared/                 # 3サービス共通の部品
 │   ├── httpserver/         # 起動・グレースフルシャットダウン・/healthz・Host 検証・防御ヘッダー
+│   ├── jsonapi/            # JSON 応答・エラー形式・リクエストの読み取り（api と insight で共通）
 │   └── envconf/            # 環境変数の読み込みとループバック限定の検証
 └── data/                   # SQLite ファイル（.gitignore で除外）
 ```
