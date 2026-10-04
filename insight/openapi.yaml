@@ -1,0 +1,115 @@
+openapi: 3.1.0
+info:
+  title: task-manager Insight API
+  version: 1.0.0
+  summary: 振り返りのテキストから「学んだこと」と「できなかったこと」を抽出する API
+  description: |
+    DB を持たないステートレスなサービス。task-manager の api から呼ばれるほか、ほかのアプリからも単体で使える。
+
+    抽出はルールベースで、次の順に分類する。
+
+    1. 見出し（「学んだこと」「できなかったこと」「課題」など）の下の行は、その見出しの分類
+    2. 見出しの外で `+` / `-`（全角も可）で始まる行
+    3. それ以外の文はキーワード（「理解した」「わかった」/「できなかった」「まだ」「難しかった」など。否定を先に判定）。
+       どれにも当たらない文は捨てる
+
+    エラーは `{"error": {"code", "message", "details"}}` の形で返す（api と同じ）。
+    待ち受けはループバックのみ。`Host` が localhost / 127.0.0.1 / ::1 以外だと 421（平文）。
+  license:
+    name: 未定（個人利用）
+    identifier: LicenseRef-Proprietary
+servers:
+  - url: http://127.0.0.1:8081
+    description: 既定（`INSIGHT_ADDR` で変更できる）
+# 認証は無い（ループバックでのみ待ち受ける）
+security: []
+
+paths:
+  /healthz:
+    get:
+      operationId: healthz
+      summary: 死活監視
+      responses:
+        "200":
+          description: 正常
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, enum: [ok] }
+        "421":
+          description: "`Host` が localhost / 127.0.0.1 / ::1 以外（DNS リバインディング対策。平文。全パス共通）"
+          content:
+            text/plain:
+              schema: { type: string }
+
+  /api/v1/extract:
+    post:
+      operationId: extract
+      summary: テキストから学んだこと・できなかったことを抽出
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [text]
+              properties:
+                text: { type: string, minLength: 1, maxLength: 5000 }
+            example: { text: "goroutine の使い方を理解した。テストの書き方はまだ曖昧。" }
+      responses:
+        "200":
+          description: 抽出結果（文をそのまま返す。重複は1つにまとめる。0件でも空配列）
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [learned, not_learned]
+                properties:
+                  learned: { type: array, items: { type: string } }
+                  not_learned: { type: array, items: { type: string } }
+              example:
+                learned: [goroutine の使い方を理解した]
+                not_learned: [テストの書き方はまだ曖昧]
+        "400": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+
+components:
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum: [invalid_json, not_found, method_not_allowed, payload_too_large, unsupported_media_type, validation_failed, internal_error]
+            message: { type: string }
+            details:
+              type: array
+              description: validation_failed のときの項目ごとの理由（field = text、code = required / too_long）
+              items:
+                type: object
+                required: [field, code, message]
+                properties:
+                  field: { type: string }
+                  code: { type: string, enum: [required, too_long] }
+                  message: { type: string }
+  responses:
+    Error:
+      description: |
+        エラー。400 = JSON の誤り・未知のフィールド（invalid_json）、413 = ボディが大きすぎる（payload_too_large）、
+        415 = Content-Type が JSON でない（unsupported_media_type）、422 = テキストが空・5000 文字超（validation_failed）、
+        500 = 抽出に失敗（internal_error）
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
