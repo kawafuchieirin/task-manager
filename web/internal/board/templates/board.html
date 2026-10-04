@@ -68,6 +68,28 @@
     <span>じっせき {{.ActualText}}</span>
     {{with .DiffText}}<span class="card__diff">{{.}}</span>{{end}}
   </p>
+  {{with .Reflection -}}
+  <div class="card__reflection">
+    {{if eq .ExtractStatus "ok" -}}
+      {{with .Learned -}}
+      <p class="card__reflection-title">まなんだこと</p>
+      <ul class="card__reflection-items">{{range .}}<li>{{.}}</li>{{end}}</ul>
+      {{- end}}
+      {{with .NotLearned -}}
+      <p class="card__reflection-title card__reflection-title--not">できなかったこと</p>
+      <ul class="card__reflection-items">{{range .}}<li>{{.}}</li>{{end}}</ul>
+      {{- end}}
+      {{if and (not .Learned) (not .NotLearned) -}}
+      <p class="card__reflection-note">ふりかえりから なにも みつからなかった。 「＋」「−」で はじめると わけられます。</p>
+      {{- end}}
+    {{- else if eq .ExtractStatus "failed" -}}
+      <p class="card__reflection-note card__reflection-note--failed">ちゅうしゅつに しっぱいした！
+        <button type="button" class="button button--small" hx-post="/tasks/{{$.ID}}/reflection/extract">もういちど</button></p>
+    {{- else -}}
+      <p class="card__reflection-note">ちゅうしゅつちゅう…</p>
+    {{- end}}
+  </div>
+  {{- end}}
   {{if .Running -}}
   <p class="card__timer" role="timer" aria-live="off">
     <span class="card__timer-dot" aria-hidden="true"></span>けいそくちゅう
@@ -83,6 +105,10 @@
     {{range actions .Status -}}
     <button type="button" class="button" hx-post="/tasks/{{$.ID}}/status" hx-vals='{"status": "{{.To}}", "from": "{{$.Status}}"}'>{{.Label}}</button>
     {{- end}}
+    {{if or (eq .Status "done") .Reflection -}}
+    <button type="button" class="button button--ghost" hx-get="/tasks/{{.ID}}/reflection"
+            {{if .ReflectPanel}}aria-expanded="true"{{else}}aria-expanded="false"{{end}}>ふりかえる</button>
+    {{- end}}
     <button type="button" class="button button--ghost" hx-get="/tasks/{{.ID}}/time"
             {{if .Panel}}aria-expanded="true"{{else}}aria-expanded="false"{{end}}>じかんの きろく</button>
     <button type="button" class="button button--ghost" hx-get="/tasks/{{.ID}}/edit">へんしゅう</button>
@@ -90,7 +116,29 @@
             hx-confirm="「{{.Title}}」を すてますか？">すてる</button>
   </div>
   {{with .Panel}}{{template "time-panel" .}}{{end}}
+  {{with .ReflectPanel}}{{template "reflect-panel" .}}{{end}}
 </li>
+{{- end}}
+
+{{define "reflect-panel" -}}
+<section class="reflect-panel" aria-label="ふりかえり">
+  <form class="reflect-panel__form" hx-put="/tasks/{{.TaskID}}/reflection">
+    <label for="reflect-{{.TaskID}}">ふりかえり</label>
+    <textarea id="reflect-{{.TaskID}}" name="body" rows="5" maxlength="5000" required
+              aria-describedby="reflect-{{.TaskID}}-hint{{if .Errors}} reflect-{{.TaskID}}-error{{end}}"
+              {{if .Errors}}aria-invalid="true"{{end}}>{{.Body}}</textarea>
+    <p id="reflect-{{.TaskID}}-hint" class="reflect-panel__hint">「＋」で はじめた ぎょうは まなんだこと、「−」で はじめた ぎょうは できなかったこと に なります。 「りかいした」「まだ」などの ことばでも わけます。</p>
+    {{with .Errors}}<div id="reflect-{{$.TaskID}}-error">{{range .}}<p class="field__error">{{.}}</p>{{end}}</div>{{end}}
+    <div class="time-panel__row">
+      <button type="submit" class="button button--primary">きろくする</button>
+      {{if .Exists -}}
+      <button type="button" class="button button--danger" hx-delete="/tasks/{{.TaskID}}/reflection"
+              hx-confirm="ふりかえりを けしますか？">けす</button>
+      {{- end}}
+      <button type="button" class="button button--ghost" hx-get="/board">とじる</button>
+    </div>
+  </form>
+</section>
 {{- end}}
 
 {{define "time-panel" -}}

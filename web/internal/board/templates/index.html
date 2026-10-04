@@ -1,22 +1,5 @@
 {{define "index" -}}
-<!doctype html>
-<html lang="ja">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>タスクボード</title>
-  {{/* 検証エラー（422）のときもボードを差し替えて、入力値とエラーメッセージを表示する */}}
-  <meta name="htmx-config" content='{"responseHandling":[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"422","swap":true},{"code":"[45]..","swap":false,"error":true}]}'>
-  <link rel="stylesheet" href="/static/app.css">
-  <script src="/static/htmx.min.js" defer></script>
-  <script src="/static/app.js" defer></script>
-</head>
-<body>
-  <header class="page-header">
-    <h1>タスクボード</h1>
-  </header>
-  <div id="flash" class="flash" role="alert" title="クリックで とじる" hidden></div>
-  <main>
+{{template "page-start" "board"}}
     {{if .LoadError -}}
     <section class="load-error" role="alert">
       <p>{{.LoadError}}</p>
@@ -25,7 +8,5 @@
     {{- else -}}
     {{template "board" .}}
     {{- end}}
-  </main>
-</body>
-</html>
+{{template "page-end"}}
 {{- end}}

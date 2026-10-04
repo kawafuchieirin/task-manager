@@ -35,7 +35,7 @@ func TestNotices(t *testing.T) {
 		{"とりかかる", http.MethodPost, "/tasks/1/status", url.Values{"status": {"doing"}, "from": {"todo"}}, "「スライム」に とりかかった！"},
 		{"タイマー開始", http.MethodPost, "/tasks/1/timer/start", url.Values{}, "「スライム」との たたかいが はじまった！"},
 		{"タイマー停止", http.MethodPost, "/tasks/1/timer/stop", url.Values{}, "「スライム」との たたかいを おえた。"},
-		{"クリア", http.MethodPost, "/tasks/1/status", url.Values{"status": {"done"}, "from": {"doing"}}, "「スライム」を やっつけた！"},
+		{"クリア", http.MethodPost, "/tasks/1/status", url.Values{"status": {"done"}, "from": {"doing"}}, "「スライム」を やっつけた！ ふりかえりを かいておこう。"},
 		{"やりなおす", http.MethodPost, "/tasks/1/status", url.Values{"status": {"doing"}, "from": {"done"}}, "「スライム」が ふたたび あらわれた！"},
 		{"すてる", http.MethodDelete, "/tasks/1", nil, "タスクを すてた。"},
 	}

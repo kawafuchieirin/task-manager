@@ -1,0 +1,31 @@
+{{/* ページ共通の頭と終わり。引数は今のページ（"board" / "reflections"）で、ナビの現在地に使う。 */}}
+{{define "page-start" -}}
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{if eq . "reflections"}}ふりかえり - {{end}}タスクボード</title>
+  {{/* 検証エラー（422）のときもボードを差し替えて、入力値とエラーメッセージを表示する */}}
+  <meta name="htmx-config" content='{"responseHandling":[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"422","swap":true},{"code":"[45]..","swap":false,"error":true}]}'>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/htmx.min.js" defer></script>
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <header class="page-header">
+    <h1>タスクボード</h1>
+    <nav class="page-nav" aria-label="ページ">
+      <a class="button" href="/"{{if eq . "board"}} aria-current="page"{{end}}>ボード</a>
+      <a class="button" href="/reflections"{{if eq . "reflections"}} aria-current="page"{{end}}>ふりかえり</a>
+    </nav>
+  </header>
+  <div id="flash" class="flash" role="alert" title="クリックで とじる" hidden></div>
+  <main>
+{{- end}}
+
+{{define "page-end" -}}
+  </main>
+</body>
+</html>
+{{- end}}
