@@ -155,3 +155,65 @@ func TestToEntryView_SpansMidnight(t *testing.T) {
 		t.Errorf("Range = %q（日付をまたぐときは終了側にも日付を出す）", v.Range)
 	}
 }
+
+func TestTimer_CountdownWithEstimate(t *testing.T) {
+	h, api := newTestHandler(t)
+	task := api.add("目標あり", taskclient.StatusDoing, new(30))
+	api.add("目標なし", taskclient.StatusDoing, nil)
+	api.addEntry(task.ID, api.now.Add(-2*time.Hour), 10*time.Minute)
+
+	assertStatus(t, send(t, h, http.MethodPost, "/tasks/1/timer/start", url.Values{}), http.StatusOK)
+	api.now = api.now.Add(5 * time.Minute)
+	body := send(t, h, http.MethodGet, "/board", nil).Body.String()
+	// 実績 15 分（記録 10 分 + 計測中 5 分）、目標 30 分 → のこり 15 分。JS が使う属性も出す。
+	assertContains(t, body, `class="card__countdown">のこり 0:15:00</span>`,
+		`data-estimated="1800"`, `data-task-id="1"`, `data-task-title="目標あり"`, `data-running-since="`)
+
+	// 目標なしのタスクを計測するときはカウントダウンを出さない。
+	assertStatus(t, send(t, h, http.MethodPost, "/tasks/1/timer/stop", url.Values{}), http.StatusOK)
+	body = send(t, h, http.MethodPost, "/tasks/2/timer/start", url.Values{}).Body.String()
+	if strings.Contains(body, "card__countdown") || strings.Contains(body, "data-estimated=") {
+		t.Error("目標が無いタスクではカウントダウンを出さないはず")
+	}
+}
+
+func TestTimer_CountdownOvertime(t *testing.T) {
+	h, api := newTestHandler(t)
+	task := api.add("超過", taskclient.StatusDoing, new(10))
+	api.addEntry(task.ID, api.now.Add(-2*time.Hour), 9*time.Minute)
+	assertStatus(t, send(t, h, http.MethodPost, "/tasks/1/timer/start", url.Values{}), http.StatusOK)
+	api.now = api.now.Add(2*time.Minute + 30*time.Second)
+
+	body := send(t, h, http.MethodGet, "/board", nil).Body.String()
+	// html/template は「+」を &#43; にエスケープする（ブラウザでは「+」と表示される）。
+	assertContains(t, body, `class="card__countdown card__countdown--over">オーバー &#43;0:01:30</span>`)
+}
+
+func TestCountdown(t *testing.T) {
+	now := time.Now()
+	tests := []struct {
+		name string
+		card cardView
+		want string
+	}{
+		{"計測中でない", cardView{Task: taskclient.Task{EstimatedMin: new(30), ActualSec: 60}}, ""},
+		{"目標なし", cardView{Task: taskclient.Task{RunningSince: &now, ActualSec: 60}}, ""},
+		{"目標 0 分", cardView{Task: taskclient.Task{RunningSince: &now, EstimatedMin: new(0), ActualSec: 60}}, ""},
+		{"残りあり", cardView{Task: taskclient.Task{RunningSince: &now, EstimatedMin: new(30), ActualSec: 61}}, "のこり 0:28:59"},
+		{"ちょうど", cardView{Task: taskclient.Task{RunningSince: &now, EstimatedMin: new(1), ActualSec: 60}}, "オーバー +0:00:00"},
+		{"超過", cardView{Task: taskclient.Task{RunningSince: &now, EstimatedMin: new(1), ActualSec: 3725}}, "オーバー +1:01:05"},
+	}
+	for _, tt := range tests {
+		if got := tt.card.Countdown(); got != tt.want {
+			t.Errorf("%s: Countdown() = %q, want %q", tt.name, got, tt.want)
+		}
+	}
+}
+
+func TestNotifyToggleInHeader(t *testing.T) {
+	h, _ := newTestHandler(t)
+	for _, path := range []string{"/", "/reflections"} {
+		assertContains(t, send(t, h, http.MethodGet, path, nil).Body.String(),
+			`id="notify-toggle" aria-pressed="true">つうち: ON</button>`)
+	}
+}

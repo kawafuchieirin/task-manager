@@ -86,7 +86,8 @@
   <p class="card__time{{if .Over}} card__time--over{{end}}">
     {{with .EstimatedMin}}<span>もくひょう {{minutes .}}</span>{{end}}
     <span>じっせき {{.ActualText}}</span>
-    {{with .DiffText}}<span class="card__diff">{{.}}</span>{{end}}
+    {{/* 計測中は下のカウントダウンが残りを表示するので、ここでは出さない（表示が食い違わないように） */}}
+    {{if not .Countdown}}{{with .DiffText}}<span class="card__diff">{{.}}</span>{{end}}{{end}}
   </p>
   {{with .Reflection -}}
   <div class="card__reflection">
@@ -113,7 +114,9 @@
   {{if .Running -}}
   <p class="card__timer" role="timer" aria-live="off">
     <span class="card__timer-dot" aria-hidden="true"></span>けいそくちゅう
-    <span class="card__timer-clock" data-elapsed="{{.ActualSec}}">{{clock .ActualSec}}</span>
+    <span class="card__timer-clock" data-elapsed="{{.ActualSec}}" data-task-id="{{.ID}}" data-task-title="{{.Title}}"
+          data-running-since="{{.RunningSince.Unix}}"{{with .EstimatedSec}} data-estimated="{{.}}"{{end}}>{{clock .ActualSec}}</span>
+    {{with .Countdown}}<span class="card__countdown{{if $.Over}} card__countdown--over{{end}}">{{.}}</span>{{end}}
   </p>
   {{- end}}
   <div class="card__actions">
