@@ -2,6 +2,8 @@ go 1.27.1
 
 use (
 	./api
+	./cli
+	./client
 	./insight
 	./shared
 	./web
