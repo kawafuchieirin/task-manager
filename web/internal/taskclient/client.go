@@ -44,6 +44,35 @@ type Task struct {
 	ActualSec int64 `json:"actual_sec"`
 	// RunningSince は計測中のタイマーの開始時刻。タイマーが動いていなければ nil。
 	RunningSince *time.Time `json:"running_since"`
+	// Reflection は振り返り。書いていなければ nil。
+	Reflection *Reflection `json:"reflection"`
+}
+
+// ExtractStatus は振り返りの抽出の状態（pending / ok / failed）。
+type ExtractStatus string
+
+// 抽出の状態。
+const (
+	ExtractPending ExtractStatus = "pending"
+	ExtractOK      ExtractStatus = "ok"
+	ExtractFailed  ExtractStatus = "failed"
+)
+
+// Reflection はタスクの振り返りと、そこから抽出した「学んだこと」「できなかったこと」。
+type Reflection struct {
+	TaskID        int64         `json:"task_id"`
+	Body          string        `json:"body"`
+	Learned       []string      `json:"learned"`
+	NotLearned    []string      `json:"not_learned"`
+	ExtractStatus ExtractStatus `json:"extract_status"`
+	UpdatedAt     time.Time     `json:"updated_at"`
+}
+
+// ReflectionEntry は振り返りの一覧の1件。
+type ReflectionEntry struct {
+	Reflection
+	TaskTitle  string `json:"task_title"`
+	TaskStatus Status `json:"task_status"`
 }
 
 // TimeEntry はタスクに作業した1区間。EndedAt が nil の区間は計測中。
@@ -264,6 +293,47 @@ func (c *Client) DeleteTimeEntry(ctx context.Context, entryID int64) error {
 	return c.do(ctx, http.MethodDelete, "/api/v1/time-entries/"+strconv.FormatInt(entryID, 10), nil, nil)
 }
 
+// SaveReflection は振り返りを保存する。抽出に失敗しても成功として返り、ExtractStatus が failed になる。
+func (c *Client) SaveReflection(ctx context.Context, taskID int64, body string) (Reflection, error) {
+	var r Reflection
+	err := c.do(ctx, http.MethodPut, taskPath(taskID)+"/reflection", map[string]string{"body": body}, &r)
+	return r, err
+}
+
+// ExtractReflection は保存済みの振り返りをもう一度抽出する。
+func (c *Client) ExtractReflection(ctx context.Context, taskID int64) (Reflection, error) {
+	var r Reflection
+	err := c.do(ctx, http.MethodPost, taskPath(taskID)+"/reflection/extract", nil, &r)
+	return r, err
+}
+
+// DeleteReflection は振り返りを削除する。
+func (c *Client) DeleteReflection(ctx context.Context, taskID int64) error {
+	return c.do(ctx, http.MethodDelete, taskPath(taskID)+"/reflection", nil, nil)
+}
+
+// ListReflections は期間内（from 以上 to 未満）の振り返りを新しい順に返す。nil ならその側の制限なし。
+func (c *Client) ListReflections(ctx context.Context, from, to *time.Time) ([]ReflectionEntry, error) {
+	q := url.Values{}
+	if from != nil {
+		q.Set("from", from.Format(time.RFC3339))
+	}
+	if to != nil {
+		q.Set("to", to.Format(time.RFC3339))
+	}
+	path := "/api/v1/reflections"
+	if len(q) > 0 {
+		path += "?" + q.Encode()
+	}
+	var resp struct {
+		Reflections []ReflectionEntry `json:"reflections"`
+	}
+	if err := c.do(ctx, http.MethodGet, path, nil, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Reflections, nil
+}
+
 func taskPath(id int64) string {
 	return "/api/v1/tasks/" + strconv.FormatInt(id, 10)
 }
@@ -310,7 +380,11 @@ func (c *Client) send(ctx context.Context, method, path string, payload []byte, 
 	if payload != nil {
 		reqBody = bytes.NewReader(payload)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, c.baseURL.JoinPath(path).String(), reqBody)
+	// JoinPath はクエリの「?」もパスとしてエスケープしてしまうので、クエリは分けて付ける。
+	pathOnly, query, _ := strings.Cut(path, "?")
+	u := c.baseURL.JoinPath(pathOnly)
+	u.RawQuery = query
+	req, err := http.NewRequestWithContext(ctx, method, u.String(), reqBody)
 	if err != nil {
 		return false, fmt.Errorf("リクエストの作成に失敗: %w", err)
 	}

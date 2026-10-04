@@ -8,13 +8,18 @@ import (
 
 	"github.com/kawafuchieirin/task-manager/api/internal/config"
 	"github.com/kawafuchieirin/task-manager/api/internal/httpapi"
+	"github.com/kawafuchieirin/task-manager/api/internal/insightclient"
 	"github.com/kawafuchieirin/task-manager/api/internal/task"
 	"github.com/kawafuchieirin/task-manager/shared/httpserver"
 )
 
 // newHandler は API サーバーの全ルートを組み立てる。
 func newHandler(cfg config.Config, database *sql.DB, logger *slog.Logger) (http.Handler, error) {
-	svc := task.NewService(database)
+	insight, err := insightclient.New(cfg.InsightURL)
+	if err != nil {
+		return nil, err
+	}
+	svc := task.NewService(database, task.WithExtractor(insight))
 
 	mux := http.NewServeMux()
 	mux.Handle("GET /healthz", httpserver.HealthHandler(logger, database.PingContext))

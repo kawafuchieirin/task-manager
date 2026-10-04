@@ -39,7 +39,7 @@ build: ## bin/ にビルドする
 	@$(SERVICE) build
 
 test: ## 全モジュールのテストをレースディテクタ付きで実行する
-	$(RUN) go test -race $(PACKAGES)
+	$(RUN) go test -race -timeout 120s $(PACKAGES)
 
 lint: ## golangci-lint（モジュールごと）と shellcheck で静的解析する
 	@for m in $(MODULES); do \

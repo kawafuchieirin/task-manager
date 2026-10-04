@@ -71,8 +71,9 @@ func (s Summary) ProgressPercent() int {
 
 // Service はタスクの操作を提供する。
 type Service struct {
-	db  *sql.DB
-	now func() time.Time
+	db        *sql.DB
+	now       func() time.Time
+	extractor Extractor
 }
 
 // Option は Service の設定を変更する。
@@ -96,10 +97,12 @@ func NewService(database *sql.DB, opts ...Option) *Service {
 // 時間記録を1回の JOIN で集計し、タスクごとに問い合わせる N+1 を避ける。
 // 最初のプレースホルダーには、計測中の区間を数える基準となる現在時刻を渡す。
 // 時計が戻った場合でも負の時間にならないよう、区間ごとに 0 で下限を取る。
+// 振り返り（1タスクに1つ）も LEFT JOIN でまとめて取得する。
 const taskQuery = `SELECT t.id, t.title, t.description, t.status, t.estimated_min, t.completed_at, t.created_at, t.updated_at,
 	coalesce(sum(max(0, unixepoch(coalesce(e.ended_at, ?)) - unixepoch(e.started_at))), 0),
-	max(CASE WHEN e.ended_at IS NULL THEN e.started_at END)
-FROM tasks t LEFT JOIN time_entries e ON e.task_id = t.id`
+	max(CASE WHEN e.ended_at IS NULL THEN e.started_at END),
+	r.task_id, r.body, r.learned_json, r.not_learned_json, r.extract_status, r.updated_at
+FROM tasks t LEFT JOIN time_entries e ON e.task_id = t.id LEFT JOIN reflections r ON r.task_id = t.id`
 
 // List はタスクを作成順に返す。status を指定するとそのステータスのみに絞り込む。
 func (s *Service) List(ctx context.Context, status *Status) ([]Task, error) {
@@ -316,9 +319,13 @@ func scanTask(sc scanner) (Task, error) {
 		completed            sql.NullString
 		createdAt, updatedAt string
 		running              sql.NullString
+		// 振り返り（LEFT JOIN なので無ければすべて NULL）
+		refTaskID                   sql.NullInt64
+		refBody, refLearned, refNot sql.NullString
+		refStatus, refUpdated       sql.NullString
 	)
 	if err := sc.Scan(&t.ID, &t.Title, &t.Description, &status, &estimated, &completed, &createdAt, &updatedAt,
-		&t.ActualSec, &running); err != nil {
+		&t.ActualSec, &running, &refTaskID, &refBody, &refLearned, &refNot, &refStatus, &refUpdated); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Task{}, err
 		}
@@ -350,6 +357,14 @@ func scanTask(sc scanner) (Task, error) {
 			return Task{}, perr
 		}
 		t.RunningSince = &r
+	}
+	if refTaskID.Valid {
+		r, rerr := fillReflection(Reflection{TaskID: refTaskID.Int64, Body: refBody.String},
+			refLearned, refNot, refStatus.String, refUpdated.String)
+		if rerr != nil {
+			return Task{}, rerr
+		}
+		t.Reflection = &r
 	}
 	return t, nil
 }

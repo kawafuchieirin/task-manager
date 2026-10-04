@@ -15,6 +15,17 @@ import (
 
 var discardLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
 
+// errorBody / errorDetail はエラー応答をデコードするためのテスト用の型。
+type errorBody struct {
+	Error errorDetail `json:"error"`
+}
+
+type errorDetail struct {
+	Code    string            `json:"code"`
+	Message string            `json:"message"`
+	Details []task.FieldError `json:"details"`
+}
+
 func newTestHandler(t *testing.T, opts Options) http.Handler {
 	t.Helper()
 	return NewHandler(task.NewService(dbtest.New(t)), discardLogger, opts)
@@ -98,12 +109,13 @@ func TestCreateTask_JSONShape(t *testing.T) {
 	// 他のアプリが依存する公開フォーマットなので、キー名と null の出し方を固定する。
 	raw := decode[map[string]any](t, rec)
 	for _, key := range []string{"id", "title", "description", "status", "estimated_min", "completed_at", "created_at", "updated_at",
-		"actual_sec", "running_since"} {
+		"actual_sec", "running_since", "reflection"} {
 		if _, ok := raw[key]; !ok {
 			t.Errorf("キー %q がない: %v", key, raw)
 		}
 	}
-	if raw["estimated_min"] != nil || raw["completed_at"] != nil || raw["running_since"] != nil || raw["actual_sec"] != float64(0) {
+	if raw["estimated_min"] != nil || raw["completed_at"] != nil || raw["running_since"] != nil || raw["actual_sec"] != float64(0) ||
+		raw["reflection"] != nil {
 		t.Errorf("未設定の値は null で返すはず: %v", raw)
 	}
 	if s, _ := raw["created_at"].(string); !strings.HasSuffix(s, "Z") {

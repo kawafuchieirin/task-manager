@@ -3,9 +3,9 @@ package httpapi
 import (
 	"log/slog"
 	"net/http"
-	"strings"
 
 	"github.com/kawafuchieirin/task-manager/api/internal/task"
+	"github.com/kawafuchieirin/task-manager/shared/jsonapi"
 )
 
 // Options は API ハンドラの設定。
@@ -32,28 +32,25 @@ func NewHandler(svc *task.Service, logger *slog.Logger, opts Options) http.Handl
 	mux.HandleFunc("GET /api/v1/time-entries/{id}", h.getEntry)
 	mux.HandleFunc("PATCH /api/v1/time-entries/{id}", h.updateEntry)
 	mux.HandleFunc("DELETE /api/v1/time-entries/{id}", h.deleteEntry)
+	mux.HandleFunc("GET /api/v1/tasks/{id}/reflection", h.getReflection)
+	mux.HandleFunc("PUT /api/v1/tasks/{id}/reflection", h.saveReflection)
+	mux.HandleFunc("DELETE /api/v1/tasks/{id}/reflection", h.deleteReflection)
+	mux.HandleFunc("POST /api/v1/tasks/{id}/reflection/extract", h.extractReflection)
+	mux.HandleFunc("GET /api/v1/reflections", h.listReflections)
 
 	// ServeMux 既定の 404 / 405 は平文なので、エラー形式を揃えるため JSON で返す。
 	// メソッド付きのパターンが優先されるため、以下はメソッドが合わないときだけ呼ばれる。
-	mux.Handle("/api/v1/tasks", methodNotAllowed(http.MethodGet, http.MethodPost))
-	mux.Handle("/api/v1/tasks/{id}", methodNotAllowed(http.MethodGet, http.MethodPatch, http.MethodDelete))
-	mux.Handle("/api/v1/stats/summary", methodNotAllowed(http.MethodGet))
-	mux.Handle("/api/v1/tasks/{id}/timer/start", methodNotAllowed(http.MethodPost))
-	mux.Handle("/api/v1/tasks/{id}/timer/stop", methodNotAllowed(http.MethodPost))
-	mux.Handle("/api/v1/tasks/{id}/time-entries", methodNotAllowed(http.MethodGet, http.MethodPost))
-	mux.Handle("/api/v1/time-entries/{id}", methodNotAllowed(http.MethodGet, http.MethodPatch, http.MethodDelete))
-	mux.HandleFunc("/api/v1/", func(w http.ResponseWriter, r *http.Request) {
-		writeError(w, http.StatusNotFound, codeNotFound, "API のパスが存在しません", nil)
-	})
+	mux.Handle("/api/v1/tasks", jsonapi.MethodNotAllowed(http.MethodGet, http.MethodPost))
+	mux.Handle("/api/v1/tasks/{id}", jsonapi.MethodNotAllowed(http.MethodGet, http.MethodPatch, http.MethodDelete))
+	mux.Handle("/api/v1/stats/summary", jsonapi.MethodNotAllowed(http.MethodGet))
+	mux.Handle("/api/v1/tasks/{id}/timer/start", jsonapi.MethodNotAllowed(http.MethodPost))
+	mux.Handle("/api/v1/tasks/{id}/timer/stop", jsonapi.MethodNotAllowed(http.MethodPost))
+	mux.Handle("/api/v1/tasks/{id}/time-entries", jsonapi.MethodNotAllowed(http.MethodGet, http.MethodPost))
+	mux.Handle("/api/v1/time-entries/{id}", jsonapi.MethodNotAllowed(http.MethodGet, http.MethodPatch, http.MethodDelete))
+	mux.Handle("/api/v1/tasks/{id}/reflection", jsonapi.MethodNotAllowed(http.MethodGet, http.MethodPut, http.MethodDelete))
+	mux.Handle("/api/v1/tasks/{id}/reflection/extract", jsonapi.MethodNotAllowed(http.MethodPost))
+	mux.Handle("/api/v1/reflections", jsonapi.MethodNotAllowed(http.MethodGet))
+	mux.Handle("/api/v1/", jsonapi.NotFound("API のパスが存在しません"))
 
 	return cors(opts.CORSOrigins, requireAPIKey(opts.APIKey, mux))
-}
-
-func methodNotAllowed(allowed ...string) http.Handler {
-	allow := strings.Join(allowed, ", ")
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Allow", allow)
-		writeError(w, http.StatusMethodNotAllowed, codeMethodNotAllowed,
-			r.Method+" は使用できません（使用できるメソッド: "+allow+"）", nil)
-	})
 }

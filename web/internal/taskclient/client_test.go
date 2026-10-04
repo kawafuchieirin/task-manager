@@ -219,13 +219,12 @@ func TestUnreachable(t *testing.T) {
 
 func TestTimeout(t *testing.T) {
 	block := make(chan struct{})
-	t.Cleanup(func() { close(block) })
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		select {
-		case <-block:
-		case <-r.Context().Done():
-		}
+		<-block
 	}, WithHTTPClient(&http.Client{Timeout: 50 * time.Millisecond}), WithRetry(0, 0))
+	// httptest.Server.Close は処理中のリクエストの終了を待つので、Close より先にハンドラを解放する。
+	// （Cleanup は登録の逆順に実行されるため、サーバーを作った後に登録する）
+	t.Cleanup(func() { close(block) })
 
 	start := time.Now()
 	_, err := c.List(context.Background())
@@ -313,5 +312,53 @@ func TestTimeEntries(t *testing.T) {
 	err = c.DeleteTimeEntry(ctx, 99)
 	if !errors.Is(err, ErrNotFound) || !strings.Contains(err.Error(), "時間記録が見つかりません") {
 		t.Errorf("存在しない区間: %v", err)
+	}
+}
+
+func TestReflections(t *testing.T) {
+	var gotQuery, gotBody string
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tasks/1/reflection":
+			b, _ := io.ReadAll(r.Body)
+			gotBody = string(b)
+			writeJSON(w, 200, `{"task_id":1,"body":"+ a","learned":["a"],"not_learned":[],"extract_status":"ok","updated_at":"2026-10-03T09:00:00Z"}`)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tasks/1/reflection/extract":
+			writeJSON(w, 200, `{"task_id":1,"body":"+ a","learned":[],"not_learned":[],"extract_status":"failed","updated_at":"2026-10-03T09:00:00Z"}`)
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tasks/1/reflection":
+			w.WriteHeader(204)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/reflections":
+			gotQuery = r.URL.RawQuery
+			writeJSON(w, 200, `{"reflections":[{"task_id":1,"task_title":"スライム","task_status":"done","body":"x","learned":["a"],"not_learned":[],"extract_status":"ok","updated_at":"2026-10-03T09:00:00Z"}]}`)
+		default:
+			t.Errorf("想定外: %s %s", r.Method, r.URL.String())
+			writeJSON(w, 404, `{"error":{"code":"not_found","message":"x"}}`)
+		}
+	})
+	ctx := context.Background()
+
+	r, err := c.SaveReflection(ctx, 1, "+ a")
+	if err != nil || r.ExtractStatus != ExtractOK || len(r.Learned) != 1 || gotBody != `{"body":"+ a"}` {
+		t.Errorf("保存: %+v, %v, body=%s", r, err, gotBody)
+	}
+	if r, err := c.ExtractReflection(ctx, 1); err != nil || r.ExtractStatus != ExtractFailed {
+		t.Errorf("やり直し: %+v, %v", r, err)
+	}
+	if err := c.DeleteReflection(ctx, 1); err != nil {
+		t.Errorf("削除: %v", err)
+	}
+
+	jst := time.FixedZone("JST", 9*60*60)
+	from := time.Date(2026, 10, 1, 0, 0, 0, 0, jst)
+	to := from.AddDate(0, 0, 7)
+	list, err := c.ListReflections(ctx, &from, &to)
+	if err != nil || len(list) != 1 || list[0].TaskTitle != "スライム" || list[0].TaskStatus != StatusDone {
+		t.Errorf("一覧: %+v, %v", list, err)
+	}
+	if gotQuery != "from=2026-10-01T00%3A00%3A00%2B09%3A00&to=2026-10-08T00%3A00%3A00%2B09%3A00" {
+		t.Errorf("クエリはパスと分けて送るはず: %q", gotQuery)
+	}
+	if _, err := c.ListReflections(ctx, nil, nil); err != nil || gotQuery != "" {
+		t.Errorf("期間なし: %v, query=%q", err, gotQuery)
 	}
 }

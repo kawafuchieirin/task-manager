@@ -53,6 +53,8 @@ type Task struct {
 	ActualSec int64
 	// RunningSince は計測中のタイマーの開始時刻。タイマーが動いていなければ nil。
 	RunningSince *time.Time
+	// Reflection はタスクの振り返り。書いていなければ nil。
+	Reflection *Reflection
 }
 
 // ErrNotFound は指定した ID のタスクが存在しないことを表す。

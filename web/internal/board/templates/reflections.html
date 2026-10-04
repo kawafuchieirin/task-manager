@@ -1,0 +1,42 @@
+{{define "reflections" -}}
+{{template "page-start" "reflections"}}
+    <section class="reflections" aria-labelledby="reflections-title">
+      <div class="reflections__head">
+        <h2 id="reflections-title" class="reflections__title">ふりかえり</h2>
+        <nav class="reflections__ranges" aria-label="きかん">
+          {{range .Ranges -}}
+          <a class="button" href="/reflections?range={{.Key}}"{{if .Current}} aria-current="true"{{end}}>{{.Label}}</a>
+          {{- end}}
+        </nav>
+      </div>
+
+      {{if .LoadError -}}
+      <div class="load-error" role="alert"><p>{{.LoadError}}</p><a class="button" href="/reflections">もういちど</a></div>
+      {{- else if not .Entries -}}
+      <p class="reflections__empty">この きかんの ふりかえりは ない ようだ。</p>
+      {{- else -}}
+      <div class="reflections__summary">
+        <section class="reflections__group" aria-labelledby="learned-title">
+          <h3 id="learned-title" class="reflections__group-title">まなんだこと <span class="column__count">{{len .Learned}}</span></h3>
+          {{with .Learned -}}
+          <ul class="reflections__items">
+            {{range .}}<li><span class="reflections__item">{{.Text}}</span><span class="reflections__task">「{{.TaskTitle}}」</span></li>{{end}}
+          </ul>
+          {{- else -}}<p class="reflections__none">まだ ない。</p>{{- end}}
+        </section>
+        <section class="reflections__group reflections__group--not" aria-labelledby="not-learned-title">
+          <h3 id="not-learned-title" class="reflections__group-title">できなかったこと <span class="column__count">{{len .NotLearned}}</span></h3>
+          {{with .NotLearned -}}
+          <ul class="reflections__items">
+            {{range .}}<li><span class="reflections__item">{{.Text}}</span><span class="reflections__task">「{{.TaskTitle}}」</span></li>{{end}}
+          </ul>
+          {{- else -}}<p class="reflections__none">ない！</p>{{- end}}
+        </section>
+      </div>
+      {{with .Failed -}}
+      <p class="reflections__failed">＊ ちゅうしゅつに しっぱいした ふりかえりが {{.}}こ ある。 ボードの カードから「もういちど」を えらんでください。</p>
+      {{- end}}
+      {{- end}}
+    </section>
+{{template "page-end"}}
+{{- end}}

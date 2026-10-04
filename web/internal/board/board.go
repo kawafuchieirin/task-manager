@@ -101,6 +101,9 @@ type boardView struct {
 	// TimeOpenID は時間記録のパネルを開いているタスク（0 なら閉じている）。
 	TimeOpenID int64
 	TimePanel  timePanel
+	// ReflectOpenID は振り返りのパネルを開いているタスク（0 なら閉じている）。
+	ReflectOpenID int64
+	Reflect       reflectForm
 	// EstimatedMin / ActualSec はボード全体の目標時間（分）と実績時間（秒）の合計。
 	EstimatedMin int
 	ActualSec    int64
@@ -146,6 +149,11 @@ func NewHandler(api *taskclient.Client, logger *slog.Logger) (*Handler, error) {
 	h.mux.HandleFunc("GET /tasks/{id}/time", h.showTime)
 	h.mux.HandleFunc("POST /tasks/{id}/time-entries", h.addTime)
 	h.mux.HandleFunc("DELETE /tasks/{id}/time-entries/{entryID}", h.deleteTime)
+	h.mux.HandleFunc("GET /tasks/{id}/reflection", h.showReflect)
+	h.mux.HandleFunc("PUT /tasks/{id}/reflection", h.saveReflect)
+	h.mux.HandleFunc("POST /tasks/{id}/reflection/extract", h.retryExtract)
+	h.mux.HandleFunc("DELETE /tasks/{id}/reflection", h.deleteReflect)
+	h.mux.HandleFunc("GET /reflections", h.reflections)
 	h.mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(static)))
 	return h, nil
 }
@@ -203,8 +211,12 @@ func (h *Handler) changeStatus(w http.ResponseWriter, r *http.Request) {
 		h.mutationError(w, r, err)
 		return
 	}
-	// from は押したボタンが置かれていた列（メッセージの選び分けにだけ使う）。
+	// クリアしたら、そのカードで振り返りを書けるようにパネルを開く。
 	view := boardView{}
+	if updated.Status == taskclient.StatusDone {
+		view = openReflect(updated)
+	}
+	// from は押したボタンが置かれていた列（メッセージの選び分けにだけ使う）。
 	if format := statusNotice(taskclient.Status(r.FormValue("from")), updated.Status); format != "" {
 		view.Message = fmt.Sprintf(format, updated.Title)
 	}

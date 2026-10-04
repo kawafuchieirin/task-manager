@@ -19,6 +19,8 @@ type cardView struct {
 	taskclient.Task
 	// Panel は時間記録のパネルを開いているカードだけに入る。
 	Panel *timePanel
+	// ReflectPanel は振り返りのパネルを開いているカードだけに入る。
+	ReflectPanel *reflectForm
 }
 
 // Running はタイマーで計測中かどうかを返す。
@@ -100,6 +102,11 @@ func (b boardView) Card(t taskclient.Task) cardView {
 		panel := b.TimePanel
 		panel.TaskID = t.ID
 		c.Panel = &panel
+	}
+	if t.ID == b.ReflectOpenID {
+		form := b.Reflect
+		form.TaskID = t.ID
+		c.ReflectPanel = &form
 	}
 	return c
 }

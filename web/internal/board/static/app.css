@@ -62,6 +62,45 @@ body {
 
 .board { display: grid; gap: 24px; padding-bottom: 120px; }
 
+/* ページの切り替え */
+.page-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 20px; }
+.page-nav { display: flex; gap: 8px; }
+.page-nav .button[aria-current="page"], .reflections__ranges .button[aria-current="true"] { color: var(--accent); }
+.page-nav .button[aria-current="page"]::before, .reflections__ranges .button[aria-current="true"]::before { visibility: visible; animation: none; }
+
+/* カードの振り返り */
+.card__reflection { margin-top: 8px; padding-top: 6px; border-top: 2px dotted var(--muted); font-size: 0.85rem; }
+.card__reflection-title { margin: 4px 0 0; color: var(--done); }
+.card__reflection-title--not { color: var(--warn); }
+.card__reflection-items { margin: 2px 0 0; padding-left: 1.4em; }
+.card__reflection-items li { overflow-wrap: anywhere; }
+.card__reflection-note { margin: 2px 0 0; color: var(--muted); }
+.card__reflection-note--failed { color: var(--warn); }
+
+.reflect-panel { margin-top: 10px; padding-top: 10px; border-top: 2px dotted var(--muted); }
+.reflect-panel__form { display: grid; gap: 6px; }
+.reflect-panel__form label { font-size: 0.8rem; color: var(--muted); }
+.reflect-panel__hint { margin: 0; color: var(--muted); font-size: 0.75rem; }
+
+/* 振り返りのページ */
+.reflections { display: grid; gap: 24px; padding-bottom: 120px; }
+.reflections__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.reflections__title { margin: 0; font-size: 1.2rem; font-weight: normal; }
+.reflections__ranges { display: flex; flex-wrap: wrap; gap: 4px; }
+.reflections__summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+@media (max-width: 800px) { .reflections__summary { grid-template-columns: 1fr; gap: 32px; } }
+.reflections__group { position: relative; padding: 22px 16px 14px; border: var(--frame-width) solid var(--frame); border-radius: var(--radius); }
+.reflections__group--not { border-color: var(--warn); }
+.reflections__group-title {
+  position: absolute; top: -0.85em; left: 14px; margin: 0; padding: 0 8px;
+  background: var(--window); font-size: 1rem; font-weight: normal;
+}
+.reflections__items { display: grid; gap: 6px; margin: 0; padding-left: 1.2em; }
+.reflections__items li { overflow-wrap: anywhere; }
+.reflections__task { margin-left: 8px; color: var(--muted); font-size: 0.8rem; }
+.reflections__empty, .reflections__none { margin: 0; color: var(--muted); }
+.reflections__failed { margin: 0; color: var(--warn); font-size: 0.9rem; }
+
 /* 進捗（経験値ゲージ風） */
 .progress { padding: 14px 18px; }
 .progress__label { display: flex; justify-content: space-between; margin-bottom: 8px; }

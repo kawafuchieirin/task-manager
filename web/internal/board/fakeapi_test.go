@@ -24,11 +24,15 @@ type fakeAPI struct {
 	nextEntryID int64
 	now         time.Time
 	down        bool // true なら 503 を返す（API 停止中の再現）
+	// reflections はタスクごとの振り返り。insightDown なら抽出は失敗（failed）になる。
+	reflections map[int64]taskclient.Reflection
+	insightDown bool
 }
 
 func newFakeAPI(t *testing.T) (*fakeAPI, *taskclient.Client) {
 	t.Helper()
-	f := &fakeAPI{nextID: 1, nextEntryID: 1, now: time.Date(2026, 10, 3, 9, 0, 0, 0, time.UTC)}
+	f := &fakeAPI{nextID: 1, nextEntryID: 1, now: time.Date(2026, 10, 3, 9, 0, 0, 0, time.UTC),
+		reflections: map[int64]taskclient.Reflection{}}
 	srv := httptest.NewServer(f)
 	t.Cleanup(srv.Close)
 	c, err := taskclient.New(srv.URL, "", taskclient.WithRetry(0, 0))
@@ -71,9 +75,12 @@ func (f *fakeAPI) addEntry(taskID int64, start time.Time, d time.Duration) {
 	f.nextEntryID++
 }
 
-// withTime は API と同じく、タスクに実績時間と計測中タイマーの開始時刻を付ける。
+// withTime は API と同じく、タスクに実績時間・計測中タイマーの開始時刻・振り返りを付ける。
 func (f *fakeAPI) withTime(t taskclient.Task) taskclient.Task {
-	t.ActualSec, t.RunningSince = 0, nil
+	t.ActualSec, t.RunningSince, t.Reflection = 0, nil, nil
+	if r, ok := f.reflections[t.ID]; ok {
+		t.Reflection = &r
+	}
 	for _, e := range f.entries {
 		if e.TaskID != t.ID {
 			continue
@@ -187,7 +194,7 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if f.serveTime(w, r) {
+	if f.serveTime(w, r) || f.serveReflection(w, r) {
 		return
 	}
 	switch {
@@ -294,4 +301,90 @@ func writeAPIJSON(w http.ResponseWriter, status int, v any) {
 
 func writeAPIError(w http.ResponseWriter, status int, code, msg string, details []taskclient.FieldError) {
 	writeAPIJSON(w, status, map[string]any{"error": map[string]any{"code": code, "message": msg, "details": details}})
+}
+
+// extract は insight を真似て、「+」で始まる行を学んだこと、「-」で始まる行をできなかったことにする。
+func (f *fakeAPI) extract(r taskclient.Reflection) taskclient.Reflection {
+	r.Learned, r.NotLearned = []string{}, []string{}
+	if f.insightDown {
+		r.ExtractStatus = taskclient.ExtractFailed
+		return r
+	}
+	for _, line := range strings.Split(r.Body, "\n") {
+		switch {
+		case strings.HasPrefix(line, "+"):
+			r.Learned = append(r.Learned, strings.TrimSpace(line[1:]))
+		case strings.HasPrefix(line, "-"):
+			r.NotLearned = append(r.NotLearned, strings.TrimSpace(line[1:]))
+		}
+	}
+	r.ExtractStatus = taskclient.ExtractOK
+	return r
+}
+
+// setReflection は振り返りを直接用意する（テストの前提づくり用）。
+func (f *fakeAPI) setReflection(taskID int64, body string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.reflections[taskID] = f.extract(taskclient.Reflection{TaskID: taskID, Body: body, UpdatedAt: f.now})
+}
+
+func (f *fakeAPI) serveReflection(w http.ResponseWriter, r *http.Request) bool {
+	if r.URL.Path == "/api/v1/reflections" && r.Method == http.MethodGet {
+		from, _ := time.Parse(time.RFC3339, r.URL.Query().Get("from"))
+		to, _ := time.Parse(time.RFC3339, r.URL.Query().Get("to"))
+		list := []taskclient.ReflectionEntry{}
+		for _, t := range f.tasks {
+			ref, ok := f.reflections[t.ID]
+			if !ok || (!from.IsZero() && ref.UpdatedAt.Before(from)) || (!to.IsZero() && !ref.UpdatedAt.Before(to)) {
+				continue
+			}
+			list = append(list, taskclient.ReflectionEntry{Reflection: ref, TaskTitle: t.Title, TaskStatus: t.Status})
+		}
+		writeAPIJSON(w, http.StatusOK, map[string]any{"reflections": list})
+		return true
+	}
+
+	rest, ok := strings.CutPrefix(r.URL.Path, "/api/v1/tasks/")
+	if !ok {
+		return false
+	}
+	idStr, action, ok := strings.Cut(rest, "/")
+	if !ok || (action != "reflection" && action != "reflection/extract") {
+		return false
+	}
+	taskID, _ := strconv.ParseInt(idStr, 10, 64)
+	if f.index(taskID) < 0 {
+		writeAPIError(w, http.StatusNotFound, "not_found", "タスクが見つかりません", nil)
+		return true
+	}
+	ref, exists := f.reflections[taskID]
+
+	switch {
+	case action == "reflection" && r.Method == http.MethodPut:
+		var in struct {
+			Body string `json:"body"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		if strings.TrimSpace(in.Body) == "" {
+			writeAPIError(w, http.StatusUnprocessableEntity, "validation_failed", "入力値が不正です",
+				[]taskclient.FieldError{{Field: "body", Code: "required", Message: "振り返りを入力してください"}})
+			return true
+		}
+		ref = f.extract(taskclient.Reflection{TaskID: taskID, Body: in.Body, UpdatedAt: f.now})
+		f.reflections[taskID] = ref
+		writeAPIJSON(w, http.StatusOK, ref)
+	case !exists:
+		writeAPIError(w, http.StatusNotFound, "not_found", "振り返りが見つかりません", nil)
+	case action == "reflection/extract" && r.Method == http.MethodPost:
+		ref = f.extract(ref)
+		f.reflections[taskID] = ref
+		writeAPIJSON(w, http.StatusOK, ref)
+	case action == "reflection" && r.Method == http.MethodDelete:
+		delete(f.reflections, taskID)
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		return false
+	}
+	return true
 }

@@ -42,11 +42,15 @@ func actionsFor(s taskclient.Status) []action {
 const (
 	msgCreated      = "「%s」が あらわれた！"
 	msgStarted      = "「%s」に とりかかった！"
-	msgDone         = "「%s」を やっつけた！"
+	msgDone         = "「%s」を やっつけた！ ふりかえりを かいておこう。"
 	msgReopened     = "「%s」が ふたたび あらわれた！"
 	msgDeleted      = "タスクを すてた。"
 	msgTimerStarted = "「%s」との たたかいが はじまった！"
 	msgTimerStopped = "「%s」との たたかいを おえた。"
+
+	msgReflectionSaved   = "ふりかえりを きろくした！ まなんだこと %dこ、 できなかったこと %dこ。"
+	msgReflectionFailed  = "ふりかえりは きろくしたが、 ちゅうしゅつに しっぱいした！ make status で insight が うごいているか たしかめてください。"
+	msgReflectionDeleted = "ふりかえりを けした。"
 )
 
 // タイマーの二重起動など、操作できなかったときの文言。
@@ -79,6 +83,7 @@ const (
 	maxTitleLen       = 100
 	maxDescriptionLen = 2000
 	maxEstimatedMin   = 7 * 24 * 60
+	maxReflectionLen  = 5000
 )
 
 // fieldMessage は入力エラーを画面の言葉づかいで返す。知らない組み合わせは API の文言をそのまま使う。
@@ -96,6 +101,10 @@ func fieldMessage(fe taskclient.FieldError) string {
 		return "もくひょうは ふんを すうじで いれてください。"
 	case "status/invalid":
 		return "その じょうたいには できない。"
+	case "body/required":
+		return "ふりかえりを いれてください。"
+	case "body/too_long":
+		return fmt.Sprintf("ふりかえりは %dもじ いないに してください。", maxReflectionLen)
 	case "minutes/out_of_range":
 		return fmt.Sprintf("さぎょうじかんは 1〜%dふん で いれてください。", maxManualMinutes)
 	case "ended_at/in_future":
