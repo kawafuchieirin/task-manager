@@ -11,6 +11,8 @@ import (
 	"syscall"
 
 	"github.com/kawafuchieirin/task-manager/insight/internal/config"
+	"github.com/kawafuchieirin/task-manager/insight/internal/extract"
+	"github.com/kawafuchieirin/task-manager/insight/internal/handler"
 	"github.com/kawafuchieirin/task-manager/shared/httpserver"
 )
 
@@ -31,10 +33,14 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("設定の読み込み: %w", err)
 	}
 
+	return httpserver.Run(ctx, httpserver.New(cfg.Addr, newHandler(cfg, logger)), logger)
+}
+
+// newHandler は insight の全ルートを組み立てる。
+func newHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 	mux := http.NewServeMux()
 	// 依存先を持たないため、プロセスが応答できれば正常とみなす。
 	mux.Handle("GET /healthz", httpserver.HealthHandler(logger, nil))
-
-	handler := httpserver.RequireHost(httpserver.LocalHosts(cfg.Addr), httpserver.SecurityHeaders(mux))
-	return httpserver.Run(ctx, httpserver.New(cfg.Addr, handler), logger)
+	mux.Handle("/api/v1/", handler.New(extract.RuleBased{}, logger))
+	return httpserver.RequireHost(httpserver.LocalHosts(cfg.Addr), httpserver.SecurityHeaders(mux))
 }
