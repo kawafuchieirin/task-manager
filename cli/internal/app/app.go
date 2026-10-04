@@ -24,7 +24,8 @@ const defaultAPIURL = "http://127.0.0.1:8080"
 const usage = `tm — ターミナルから タスクを そうさする
 
 つかいかた:
-  tm add <なまえ> [-e 分] [-d せつめい]   タスクを ついか（-e は もくひょう じかん）
+  tm add <なまえ> [-e 分] [-g ゴール] [-d せつめい]
+                                         タスクを ついか（-e は もくひょう じかん、-g は なにが できたら クリアか）
   tm ls [-a]                             みかんりょうの いちらん（-a で クリアずみも）
   tm start <id>                          タイマーを かいし
   tm stop [id]                           タイマーを ていし（id を はぶくと うごいているもの）
@@ -126,6 +127,7 @@ func (c *cli) add(ctx context.Context, args []string) error {
 		title     []string
 		estimated *int
 		desc      string
+		goal      string
 	)
 	for i := 0; i < len(args); i++ {
 		switch a := args[i]; {
@@ -138,6 +140,12 @@ func (c *cli) add(ctx context.Context, args []string) error {
 				return usageError{fmt.Sprintf("-e の %q は 分を すうじで かいてください。", args[i+1])}
 			}
 			estimated = &m
+			i++
+		case a == "-g" || a == "--goal":
+			if i+1 >= len(args) {
+				return usageError{"-g には ゴール（なにが できたら クリアか）を つけてください。"}
+			}
+			goal = args[i+1]
 			i++
 		case a == "-d" || a == "--desc":
 			if i+1 >= len(args) {
@@ -158,7 +166,7 @@ func (c *cli) add(ctx context.Context, args []string) error {
 		return usageError{"タスクの なまえを かいてください。 例: tm add \"Go を学ぶ\" -e 30"}
 	}
 
-	t, err := c.api.Create(ctx, taskclient.CreateInput{Title: strings.Join(title, " "), Description: desc, EstimatedMin: estimated})
+	t, err := c.api.Create(ctx, taskclient.CreateInput{Title: strings.Join(title, " "), Description: desc, Goal: goal, EstimatedMin: estimated})
 	if err != nil {
 		return err
 	}
@@ -219,6 +227,9 @@ func (c *cli) list(ctx context.Context, args []string) error {
 			line += "  ⏱ けいそくちゅう"
 		}
 		c.out.printf("%s\n", line)
+		if t.Goal != "" {
+			c.out.printf("      ゴール: %s\n", t.Goal)
+		}
 	}
 	return nil
 }

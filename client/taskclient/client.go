@@ -35,6 +35,7 @@ type Task struct {
 	ID           int64      `json:"id"`
 	Title        string     `json:"title"`
 	Description  string     `json:"description"`
+	Goal         string     `json:"goal"`
 	Status       Status     `json:"status"`
 	EstimatedMin *int       `json:"estimated_min"`
 	CompletedAt  *time.Time `json:"completed_at"`
@@ -88,6 +89,7 @@ type TimeEntry struct {
 type CreateInput struct {
 	Title        string `json:"title"`
 	Description  string `json:"description"`
+	Goal         string `json:"goal,omitempty"`
 	EstimatedMin *int   `json:"estimated_min,omitempty"`
 }
 
@@ -95,6 +97,7 @@ type CreateInput struct {
 type UpdateInput struct {
 	Title       *string
 	Description *string
+	Goal        *string
 	Status      *Status
 	// SetEstimatedMin が true なら EstimatedMin を送る。EstimatedMin が nil なら目標時間を未設定に戻す。
 	SetEstimatedMin bool
@@ -109,6 +112,9 @@ func (in UpdateInput) MarshalJSON() ([]byte, error) {
 	}
 	if in.Description != nil {
 		body["description"] = *in.Description
+	}
+	if in.Goal != nil {
+		body["goal"] = *in.Goal
 	}
 	if in.Status != nil {
 		body["status"] = *in.Status

@@ -68,7 +68,7 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			apiError(w, 422, "validation_failed", "入力値が不正です", map[string]string{"field": "title", "code": "required", "message": "タイトルを入力してください"})
 			return
 		}
-		task := map[string]any{"id": int64(len(f.tasks) + 1), "title": in["title"], "description": in["description"],
+		task := map[string]any{"id": int64(len(f.tasks) + 1), "title": in["title"], "description": in["description"], "goal": in["goal"],
 			"status": "todo", "estimated_min": in["estimated_min"], "actual_sec": 0, "running_since": nil}
 		f.tasks = append(f.tasks, task)
 		writeJSON(w, 201, task)
@@ -143,6 +143,7 @@ func TestAdd(t *testing.T) {
 		{[]string{"add", "-e", "45", "htmx", "を", "読む"}, "htmx を 読む", float64(45), ""}, // 引用符なしの複数語・オプションが先
 		{[]string{"add", "テスト", "--desc", "テーブル駆動", "--estimate", "10"}, "テスト", float64(10), "テーブル駆動"},
 		{[]string{"add", "--", "-e で始まる名前"}, "-e で始まる名前", nil, ""},
+		{[]string{"add", "Go", "-g", "Tour を最後まで", "-e", "30"}, "Go", float64(30), ""},
 	}
 	for i, tt := range tests {
 		code, out, errOut := run(t, url, nil, tt.args...)
@@ -315,5 +316,23 @@ func TestRun_WriteFailureIsError(t *testing.T) {
 	}
 	if code := Run(context.Background(), []string{"ls"}, getenv, failWriter{}, io.Discard); code != 1 {
 		t.Errorf("出力に失敗したら終了コード 1 のはず: %d", code)
+	}
+}
+
+func TestGoal(t *testing.T) {
+	f, url := newFake(t)
+	if code, _, errOut := run(t, url, nil, "add", "Go を学ぶ", "--goal", "練習問題を3問解く"); code != 0 {
+		t.Fatalf("code=%d stderr=%s", code, errOut)
+	}
+	if f.tasks[0]["goal"] != "練習問題を3問解く" {
+		t.Errorf("送ったゴール: %v", f.tasks[0]["goal"])
+	}
+	run(t, url, nil, "add", "ゴールなし")
+	_, out, _ := run(t, url, nil, "ls")
+	if !strings.Contains(out, "#1    [みちゃくしゅ] Go を学ぶ\n      ゴール: 練習問題を3問解く\n#2") {
+		t.Errorf("ゴールは名前の下の行に出すはず（無ければ出さない）:\n%s", out)
+	}
+	if code, _, _ := run(t, url, nil, "add", "x", "-g"); code != 2 {
+		t.Errorf("-g に値が無ければ使い方の誤り: %d", code)
 	}
 }

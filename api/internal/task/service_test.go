@@ -351,3 +351,45 @@ func TestNullable_UnmarshalJSON(t *testing.T) {
 		t.Errorf("キーなし: %+v", body.C)
 	}
 }
+
+func TestGoal(t *testing.T) {
+	svc, _ := newTestService(t)
+	ctx := context.Background()
+
+	created := mustCreate(t, svc, CreateInput{Title: "Go を学ぶ", Goal: "  A Tour of Go を最後まで終える  "})
+	if created.Goal != "A Tour of Go を最後まで終える" {
+		t.Errorf("Goal = %q（前後の空白は除く）", created.Goal)
+	}
+	if noGoal := mustCreate(t, svc, CreateInput{Title: "ゴールなし"}); noGoal.Goal != "" {
+		t.Errorf("未指定なら空文字: %q", noGoal.Goal)
+	}
+
+	updated, err := svc.Update(ctx, created.ID, UpdateInput{Goal: ptr("練習問題を3問解く")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Goal != "練習問題を3問解く" || updated.Title != "Go を学ぶ" {
+		t.Errorf("ゴールだけ変わるはず: %+v", updated)
+	}
+	cleared, err := svc.Update(ctx, created.ID, UpdateInput{Goal: ptr("")})
+	if err != nil || cleared.Goal != "" {
+		t.Errorf("空文字でゴールを消せるはず: %q, %v", cleared.Goal, err)
+	}
+	kept, err := svc.Update(ctx, created.ID, UpdateInput{Title: ptr("Go の基礎")})
+	if err != nil || kept.Goal != "" {
+		t.Errorf("指定しなければゴールは変わらない: %q, %v", kept.Goal, err)
+	}
+}
+
+func TestGoal_Validation(t *testing.T) {
+	svc, _ := newTestService(t)
+	ctx := context.Background()
+	_, err := svc.Create(ctx, CreateInput{Title: "t", Goal: strings.Repeat("あ", MaxGoalLen+1)})
+	assertCode(t, err, "goal", CodeTooLong)
+	if _, err := svc.Create(ctx, CreateInput{Title: "t", Goal: strings.Repeat("あ", MaxGoalLen)}); err != nil {
+		t.Errorf("上限ちょうどが拒否された: %v", err)
+	}
+	created := mustCreate(t, svc, CreateInput{Title: "t"})
+	_, err = svc.Update(ctx, created.ID, UpdateInput{Goal: ptr(strings.Repeat("a", MaxGoalLen+1))})
+	assertCode(t, err, "goal", CodeTooLong)
+}

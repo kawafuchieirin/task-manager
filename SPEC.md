@@ -67,7 +67,8 @@
 - カンバン形式で「未着手 / 進行中 / 完了」の3列を表示する
 - タスクの作成・編集・削除ができる
 - ステータスはボタン操作で変更する（ドラッグ&ドロップは F1 の必須範囲外。後から追加できるようにする）
-- タスクの項目: タイトル（必須、1〜100文字）、説明（任意、2000文字まで）、目標時間（分）、ステータス、作成日時、完了日時
+- タスクの項目: タイトル（必須、1〜100文字）、ゴール（任意、500文字まで。何ができたら完了か）、説明（任意、2000文字まで）、目標時間（分）、ステータス、作成日時、完了日時
+  - ゴールは 2026-10-04 に追加（マイグレーション 0002。既存のタスクは空文字）。目標時間（もくひょう）とは別の、達成条件の文章
 
 ### F2. 進捗バー
 
@@ -177,6 +178,7 @@ tasks
   id               INTEGER PK
   title            TEXT NOT NULL
   description      TEXT NOT NULL DEFAULT ''
+  goal             TEXT NOT NULL DEFAULT ''   -- 0002 で追加。500 文字まで（何ができたら完了か）
   status           TEXT NOT NULL CHECK (status IN ('todo','doing','done'))
   estimated_min    INTEGER NULL CHECK (estimated_min >= 0)
   completed_at     TEXT NULL

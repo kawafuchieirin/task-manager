@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"io/fs"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -60,8 +61,45 @@ func TestMigrate_IsIdempotent(t *testing.T) {
 	if err := db.QueryRow(`SELECT count(*) FROM schema_migrations`).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if count != 1 {
-		t.Errorf("schema_migrations の件数 = %d, want 1", count)
+	files, err := fs.Glob(migrationFS, "migrations/*.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != len(files) {
+		t.Errorf("schema_migrations の件数 = %d, want %d（マイグレーションのファイル数）", count, len(files))
+	}
+}
+
+func TestMigrate_AddsGoalToExistingTasks(t *testing.T) {
+	// 0001 だけ適用した DB にタスクを入れてから 0002 を適用し、既存のタスクのゴールが空文字になることを確かめる。
+	ctx := context.Background()
+	d, err := Open(ctx, filepath.Join(t.TempDir(), "old.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = d.Close() })
+	initSQL, err := migrationFS.ReadFile("migrations/0001_init.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Exec(string(initSQL)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Exec(`CREATE TABLE schema_migrations (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL);
+		INSERT INTO schema_migrations VALUES ('0001_init', ?);
+		INSERT INTO tasks (title, created_at, updated_at) VALUES ('既存', ?, ?)`, now, now, now); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Migrate(ctx, d); err != nil {
+		t.Fatalf("0002 の適用: %v", err)
+	}
+	var goal string
+	if err := d.QueryRow(`SELECT goal FROM tasks WHERE title = '既存'`).Scan(&goal); err != nil || goal != "" {
+		t.Errorf("既存のタスクのゴール = %q, %v（空文字のはず）", goal, err)
+	}
+	if _, err := d.Exec(`UPDATE tasks SET goal = ? WHERE title = '既存'`, strings.Repeat("あ", 501)); err == nil {
+		t.Error("501 文字のゴールは DB の制約で拒否されるはず")
 	}
 }
 

@@ -17,6 +17,7 @@ import (
 type CreateInput struct {
 	Title        string
 	Description  string
+	Goal         string
 	Status       Status // 空なら todo
 	EstimatedMin *int
 }
@@ -25,6 +26,7 @@ type CreateInput struct {
 type UpdateInput struct {
 	Title        *string
 	Description  *string
+	Goal         *string
 	Status       *Status
 	EstimatedMin Nullable[int]
 }
@@ -98,7 +100,7 @@ func NewService(database *sql.DB, opts ...Option) *Service {
 // 最初のプレースホルダーには、計測中の区間を数える基準となる現在時刻を渡す。
 // 時計が戻った場合でも負の時間にならないよう、区間ごとに 0 で下限を取る。
 // 振り返り（1タスクに1つ）も LEFT JOIN でまとめて取得する。
-const taskQuery = `SELECT t.id, t.title, t.description, t.status, t.estimated_min, t.completed_at, t.created_at, t.updated_at,
+const taskQuery = `SELECT t.id, t.title, t.description, t.goal, t.status, t.estimated_min, t.completed_at, t.created_at, t.updated_at,
 	coalesce(sum(max(0, unixepoch(coalesce(e.ended_at, ?)) - unixepoch(e.started_at))), 0),
 	max(CASE WHEN e.ended_at IS NULL THEN e.started_at END),
 	r.task_id, r.body, r.learned_json, r.not_learned_json, r.extract_status, r.updated_at
@@ -147,6 +149,7 @@ func (s *Service) Get(ctx context.Context, id int64) (Task, error) {
 // Create はタスクを作成する。
 func (s *Service) Create(ctx context.Context, in CreateInput) (Task, error) {
 	in.Title = strings.TrimSpace(in.Title)
+	in.Goal = strings.TrimSpace(in.Goal)
 	if in.Status == "" {
 		in.Status = StatusTodo
 	}
@@ -154,6 +157,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (Task, error) {
 	v := &validator{}
 	v.title(in.Title)
 	v.description(in.Description)
+	v.goal(in.Goal)
 	v.status(in.Status)
 	v.estimatedMin(in.EstimatedMin)
 	if err := v.err(); err != nil {
@@ -167,9 +171,9 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (Task, error) {
 	}
 
 	res, err := s.db.ExecContext(ctx,
-		`INSERT INTO tasks (title, description, status, estimated_min, completed_at, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		in.Title, in.Description, string(in.Status), nullInt(in.EstimatedMin), nullTime(completedAt),
+		`INSERT INTO tasks (title, description, goal, status, estimated_min, completed_at, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		in.Title, in.Description, in.Goal, string(in.Status), nullInt(in.EstimatedMin), nullTime(completedAt),
 		db.FormatTime(now), db.FormatTime(now),
 	)
 	if err != nil {
@@ -205,6 +209,10 @@ func (s *Service) Update(ctx context.Context, id int64, in UpdateInput) (Task, e
 		t.Description = *in.Description
 		v.description(t.Description)
 	}
+	if in.Goal != nil {
+		t.Goal = strings.TrimSpace(*in.Goal)
+		v.goal(t.Goal)
+	}
 	if in.EstimatedMin.Set {
 		t.EstimatedMin = in.EstimatedMin.Value
 		v.estimatedMin(t.EstimatedMin)
@@ -220,9 +228,9 @@ func (s *Service) Update(ctx context.Context, id int64, in UpdateInput) (Task, e
 	}
 
 	if _, err := tx.ExecContext(ctx,
-		`UPDATE tasks SET title = ?, description = ?, status = ?, estimated_min = ?, completed_at = ?, updated_at = ?
+		`UPDATE tasks SET title = ?, description = ?, goal = ?, status = ?, estimated_min = ?, completed_at = ?, updated_at = ?
 		 WHERE id = ?`,
-		t.Title, t.Description, string(t.Status), nullInt(t.EstimatedMin), nullTime(t.CompletedAt),
+		t.Title, t.Description, t.Goal, string(t.Status), nullInt(t.EstimatedMin), nullTime(t.CompletedAt),
 		db.FormatTime(now), id,
 	); err != nil {
 		return Task{}, fmt.Errorf("タスクの更新に失敗: %w", err)
@@ -324,7 +332,7 @@ func scanTask(sc scanner) (Task, error) {
 		refBody, refLearned, refNot sql.NullString
 		refStatus, refUpdated       sql.NullString
 	)
-	if err := sc.Scan(&t.ID, &t.Title, &t.Description, &status, &estimated, &completed, &createdAt, &updatedAt,
+	if err := sc.Scan(&t.ID, &t.Title, &t.Description, &t.Goal, &status, &estimated, &completed, &createdAt, &updatedAt,
 		&t.ActualSec, &running, &refTaskID, &refBody, &refLearned, &refNot, &refStatus, &refUpdated); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Task{}, err

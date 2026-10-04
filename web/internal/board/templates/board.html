@@ -47,6 +47,13 @@
       {{with .Error "estimated_min"}}<p id="new-estimated-error" class="field__error">{{.}}</p>{{end}}
     </div>
     <div class="field field--full">
+      <label for="new-goal">ゴール（なにが できたら クリア？ なくても よい）</label>
+      <input id="new-goal" name="goal" value="{{.Goal}}" maxlength="500" autocomplete="off"
+             placeholder="れい: A Tour of Go を さいごまで おえる"
+             {{with .Error "goal"}}aria-invalid="true" aria-describedby="new-goal-error"{{end}}>
+      {{with .Error "goal"}}<p id="new-goal-error" class="field__error">{{.}}</p>{{end}}
+    </div>
+    <div class="field field--full">
       <label for="new-description">せつめい（なくても よい）</label>
       <textarea id="new-description" name="description" rows="2" maxlength="2000"
                 {{with .Error "description"}}aria-invalid="true"{{end}}>{{.Description}}</textarea>
@@ -79,6 +86,7 @@
 {{define "card" -}}
 <li class="card card--{{.Status}}{{if .Running}} card--running{{end}}" id="task-{{.ID}}">
   <p class="card__title">{{.Title}}</p>
+  {{with .Goal}}<p class="card__goal"><span class="card__goal-label">ゴール</span>{{.}}</p>{{end}}
   {{with .Description}}<p class="card__description">{{.}}</p>{{end}}
   {{with .CompletedAt -}}
   <p class="card__meta"><span>クリア {{jst .}}</span></p>
@@ -202,6 +210,12 @@
       <input id="edit-title-{{.ID}}" name="title" value="{{.Title}}" maxlength="100" required autocomplete="off"
              {{with .Error "title"}}aria-invalid="true"{{end}}>
       {{with .Error "title"}}<p class="field__error">{{.}}</p>{{end}}
+    </div>
+    <div class="field">
+      <label for="edit-goal-{{.ID}}">ゴール（なにが できたら クリア？）</label>
+      <input id="edit-goal-{{.ID}}" name="goal" value="{{.Goal}}" maxlength="500" autocomplete="off"
+             {{with .Error "goal"}}aria-invalid="true"{{end}}>
+      {{with .Error "goal"}}<p class="field__error">{{.}}</p>{{end}}
     </div>
     <div class="field">
       <label for="edit-estimated-{{.ID}}">もくひょう（ふん）</label>
