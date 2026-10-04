@@ -85,6 +85,7 @@ const (
 const (
 	maxTitleLen       = 100
 	maxDescriptionLen = 2000
+	maxGoalLen        = 500
 	maxEstimatedMin   = 7 * 24 * 60
 	maxReflectionLen  = 5000
 )
@@ -96,6 +97,8 @@ func fieldMessage(fe taskclient.FieldError) string {
 		return "タスクの なまえを いれてください。"
 	case "title/too_long":
 		return fmt.Sprintf("なまえは %dもじ いないに してください。", maxTitleLen)
+	case "goal/too_long":
+		return fmt.Sprintf("ゴールは %dもじ いないに してください。", maxGoalLen)
 	case "description/too_long":
 		return fmt.Sprintf("せつめいは %dもじ いないに してください。", maxDescriptionLen)
 	case "estimated_min/out_of_range":

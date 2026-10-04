@@ -9,6 +9,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/kawafuchieirin/task-manager/client/taskclient"
 )
@@ -208,6 +209,7 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		var in struct {
 			Title        string `json:"title"`
 			Description  string `json:"description"`
+			Goal         string `json:"goal"`
 			EstimatedMin *int   `json:"estimated_min"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&in)
@@ -216,7 +218,12 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				[]taskclient.FieldError{{Field: "title", Code: "required", Message: "タイトルを入力してください"}})
 			return
 		}
-		t := taskclient.Task{ID: f.nextID, Title: strings.TrimSpace(in.Title), Description: in.Description,
+		if utf8.RuneCountInString(in.Goal) > 500 {
+			writeAPIError(w, http.StatusUnprocessableEntity, "validation_failed", "入力値が不正です",
+				[]taskclient.FieldError{{Field: "goal", Code: "too_long", Message: "ゴールは500文字以内で入力してください"}})
+			return
+		}
+		t := taskclient.Task{ID: f.nextID, Title: strings.TrimSpace(in.Title), Description: in.Description, Goal: strings.TrimSpace(in.Goal),
 			Status: taskclient.StatusTodo, EstimatedMin: in.EstimatedMin, CreatedAt: f.now, UpdatedAt: f.now}
 		f.nextID++
 		f.tasks = append(f.tasks, t)
@@ -266,6 +273,10 @@ func (f *fakeAPI) patch(w http.ResponseWriter, r *http.Request, i int) {
 	}
 	if raw, ok := in["description"]; ok {
 		_ = json.Unmarshal(raw, &t.Description)
+	}
+	if raw, ok := in["goal"]; ok {
+		_ = json.Unmarshal(raw, &t.Goal)
+		t.Goal = strings.TrimSpace(t.Goal)
 	}
 	if raw, ok := in["estimated_min"]; ok {
 		t.EstimatedMin = nil

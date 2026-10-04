@@ -96,6 +96,7 @@ func TestUpdateInput_MarshalJSON(t *testing.T) {
 	}{
 		{"何も指定しない", UpdateInput{}, `{}`},
 		{"タイトルのみ", UpdateInput{Title: &title}, `{"title":"x"}`},
+		{"ゴールを消す", UpdateInput{Goal: new("")}, `{"goal":""}`},
 		{"目標時間を設定", UpdateInput{SetEstimatedMin: true, EstimatedMin: &m}, `{"estimated_min":30}`},
 		{"目標時間を未設定に戻す", UpdateInput{SetEstimatedMin: true}, `{"estimated_min":null}`},
 	}

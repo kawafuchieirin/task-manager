@@ -68,6 +68,7 @@ type formView struct {
 	ID           int64
 	Title        string
 	Description  string
+	Goal         string
 	EstimatedMin string
 	Errors       *taskclient.ValidationError
 }
@@ -194,6 +195,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		created, err = h.api.Create(r.Context(), taskclient.CreateInput{
 			Title:        form.Title,
 			Description:  form.Description,
+			Goal:         form.Goal,
 			EstimatedMin: estimated,
 		})
 	}
@@ -243,7 +245,7 @@ func (h *Handler) edit(w http.ResponseWriter, r *http.Request) {
 		h.mutationError(w, r, err)
 		return
 	}
-	form := formView{ID: t.ID, Title: t.Title, Description: t.Description}
+	form := formView{ID: t.ID, Title: t.Title, Description: t.Description, Goal: t.Goal}
 	if t.EstimatedMin != nil {
 		form.EstimatedMin = strconv.Itoa(*t.EstimatedMin)
 	}
@@ -262,6 +264,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 		_, err = h.api.Update(r.Context(), id, taskclient.UpdateInput{
 			Title:           &form.Title,
 			Description:     &form.Description,
+			Goal:            &form.Goal,
 			SetEstimatedMin: true,
 			EstimatedMin:    estimated,
 		})
@@ -420,6 +423,7 @@ func formFromRequest(r *http.Request) formView {
 	return formView{
 		Title:        r.FormValue("title"),
 		Description:  strings.ReplaceAll(r.FormValue("description"), "\r\n", "\n"),
+		Goal:         r.FormValue("goal"),
 		EstimatedMin: strings.TrimSpace(r.FormValue("estimated_min")),
 	}
 }

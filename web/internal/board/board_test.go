@@ -338,3 +338,33 @@ func TestProgressPercent(t *testing.T) {
 		}
 	}
 }
+
+func TestGoal_CreateEditShow(t *testing.T) {
+	h, api := newTestHandler(t)
+
+	rec := send(t, h, http.MethodPost, "/tasks", url.Values{"title": {"Go を学ぶ"}, "goal": {"Tour を最後まで"}})
+	assertStatus(t, rec, http.StatusOK)
+	assertContains(t, rec.Body.String(), `<span class="card__goal-label">ゴール</span>Tour を最後まで`)
+	if got, _ := api.get(1); got.Goal != "Tour を最後まで" {
+		t.Errorf("API に送ったゴール: %q", got.Goal)
+	}
+
+	rec = send(t, h, http.MethodGet, "/tasks/1/edit", nil)
+	assertContains(t, rec.Body.String(), `id="edit-goal-1" name="goal" value="Tour を最後まで"`)
+
+	rec = send(t, h, http.MethodPut, "/tasks/1", url.Values{"title": {"Go を学ぶ"}, "goal": {""}})
+	assertStatus(t, rec, http.StatusOK)
+	if strings.Contains(rec.Body.String(), "card__goal") {
+		t.Error("ゴールを空にしたら表示しないはず")
+	}
+	if got, _ := api.get(1); got.Goal != "" {
+		t.Errorf("ゴールを消せるはず: %q", got.Goal)
+	}
+}
+
+func TestGoal_TooLong(t *testing.T) {
+	h, _ := newTestHandler(t)
+	rec := send(t, h, http.MethodPost, "/tasks", url.Values{"title": {"t"}, "goal": {strings.Repeat("あ", 501)}})
+	assertStatus(t, rec, http.StatusUnprocessableEntity)
+	assertContains(t, rec.Body.String(), "ゴールは 500もじ いないに してください。", `aria-describedby="new-goal-error"`)
+}
