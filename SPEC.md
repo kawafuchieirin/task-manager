@@ -1,7 +1,7 @@
 # task-manager 要件定義書（SPEC）
 
 - 元 Issue: [#3 機能要件](https://github.com/kawafuchieirin/task-manager/issues/3)
-- ステータス: ドラフト（2026-10-03）
+- ステータス: M1〜M6 実装済み（2026-10-04）
 
 ## 1. 概要
 
@@ -131,7 +131,8 @@
 
 - JSON / UTF-8、パスは `/api/v1` で始める
 - エラーの形式を統一する: `{"error": {"code": "validation_failed", "message": "...", "details": [...]}}`
-- OpenAPI 3 の定義ファイル（`api/openapi.yaml`）を API 仕様の唯一の正とし、他のアプリはこれを参照して連携する
+- OpenAPI 3.1 の定義ファイル（`api/openapi.yaml`、insight は `insight/openapi.yaml`）を API 仕様の唯一の正とし、他のアプリはこれを参照して連携する。api は `GET /api/v1/openapi.yaml` でも返す
+- 仕様書と実装のパス・メソッドの一致はテストで確かめる（仕様書 → 実装は 405 の `Allow`、実装 → 仕様書は登録したルートを照合）
 
 ### 5.1 Task API（api :8080）
 
@@ -229,7 +230,8 @@ reflections
 │   │   ├── task/           # ドメインモデル・検証・永続化、タイマーと時間記録（timer.go）、振り返り（reflection.go）
 │   │   ├── httpapi/        # JSON の REST API（/api/v1）、API キー認証、CORS
 │   │   └── insightclient/  # api から insight を呼ぶクライアント（タイムアウト・リトライ）
-│   └── openapi.yaml        # （M6）
+│   ├── spec.go             # openapi.yaml をバイナリに組み込む
+│   └── openapi.yaml        # Task API の仕様書（OpenAPI 3.1）
 ├── web/                    # 画面アプリ（DB を持たない）
 │   ├── cmd/web/
 │   └── internal/
@@ -243,6 +245,7 @@ reflections
 │       ├── config/         # INSIGHT_* 環境変数
 │       ├── extract/        # 抽出ロジック（Extractor インターフェース、ルールベースの実装）
 │       └── handler/        # 抽出 API（/api/v1/extract）
+│   └── openapi.yaml        # 抽出 API の仕様書（OpenAPI 3.1）
 ├── shared/                 # 3サービス共通の部品
 │   ├── httpserver/         # 起動・グレースフルシャットダウン・/healthz・Host 検証・防御ヘッダー
 │   ├── jsonapi/            # JSON 応答・エラー形式・リクエストの読み取り（api と insight で共通）
@@ -259,11 +262,13 @@ reflections
 
 ## 10. 実装の進め方（マイルストーン）
 
-1. **M1 基盤**: `.mise.toml`、2つのサービスの骨組み、SQLite とマイグレーション、`/healthz`、CI
-2. **M2 タスク管理**: F1・F2・F3（Task API と htmx の画面）
-3. **M3 時間管理**: F4（タイマー・手動入力・目標との差分表示）
-4. **M4 抽出**: F5（insight サービス、クライアントのリトライ、振り返り一覧）
-5. **M5 演出**: F6（キャラクターの成長・表情・完了時のアニメーション）
-6. **M6 仕上げ**: OpenAPI 定義の整備、README（起動手順・他のアプリからの利用例）
+1. ✅ **M1 基盤**: `.mise.toml`、2つのサービスの骨組み、SQLite とマイグレーション、`/healthz`、CI（#4）
+2. ✅ **M2 タスク管理**: F1・F2・F3（Task API と htmx の画面）（#7）
+3. ✅ **M3 時間管理**: F4（タイマー・手動入力・目標との差分表示）（#10）
+4. ✅ **M4 抽出**: F5（insight サービス、クライアントのリトライ、振り返り一覧）（#14）
+5. ✅ **M5 演出**: F6（キャラクターの成長・表情・完了時のアニメーション）（#15）
+6. ✅ **M6 仕上げ**: OpenAPI 定義の整備、README（起動手順・他のアプリからの利用例・困ったとき）
+
+途中で入れた変更: バックグラウンド起動と Makefile（#8）、画面アプリと API の分離（#9）、レトロ RPG 風のデザインと言葉づかい（#11・#12）、起動失敗時の診断（#13）
 
 各マイルストーンを1つの PR にし、PR タイトルは Conventional Commits の形式（`feat: ...`）にする。

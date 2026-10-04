@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	apispec "github.com/kawafuchieirin/task-manager/api"
 	"github.com/kawafuchieirin/task-manager/api/internal/task"
 	"github.com/kawafuchieirin/task-manager/shared/jsonapi"
 )
@@ -37,6 +38,7 @@ func NewHandler(svc *task.Service, logger *slog.Logger, opts Options) http.Handl
 	mux.HandleFunc("DELETE /api/v1/tasks/{id}/reflection", h.deleteReflection)
 	mux.HandleFunc("POST /api/v1/tasks/{id}/reflection/extract", h.extractReflection)
 	mux.HandleFunc("GET /api/v1/reflections", h.listReflections)
+	mux.HandleFunc("GET /api/v1/openapi.yaml", serveOpenAPI)
 
 	// ServeMux 既定の 404 / 405 は平文なので、エラー形式を揃えるため JSON で返す。
 	// メソッド付きのパターンが優先されるため、以下はメソッドが合わないときだけ呼ばれる。
@@ -50,7 +52,14 @@ func NewHandler(svc *task.Service, logger *slog.Logger, opts Options) http.Handl
 	mux.Handle("/api/v1/tasks/{id}/reflection", jsonapi.MethodNotAllowed(http.MethodGet, http.MethodPut, http.MethodDelete))
 	mux.Handle("/api/v1/tasks/{id}/reflection/extract", jsonapi.MethodNotAllowed(http.MethodPost))
 	mux.Handle("/api/v1/reflections", jsonapi.MethodNotAllowed(http.MethodGet))
+	mux.Handle("/api/v1/openapi.yaml", jsonapi.MethodNotAllowed(http.MethodGet))
 	mux.Handle("/api/v1/", jsonapi.NotFound("API のパスが存在しません"))
 
 	return cors(opts.CORSOrigins, requireAPIKey(opts.APIKey, mux))
+}
+
+// serveOpenAPI は仕様書（openapi.yaml）を返す。他のアプリがクライアントの生成や確認に使える。
+func serveOpenAPI(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
+	_, _ = w.Write(apispec.OpenAPI) // ヘッダー送信後は失敗してもクライアントに伝える手段がない
 }
