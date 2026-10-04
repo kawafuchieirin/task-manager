@@ -31,6 +31,27 @@ func (c cardView) CanStartTimer() bool {
 	return !c.Running() && c.Status != taskclient.StatusDone
 }
 
+// EstimatedSec は目標時間（秒）。目標が未設定・0 分なら 0（テンプレートで data-estimated を出さない）。
+func (c cardView) EstimatedSec() int64 {
+	if c.EstimatedMin == nil {
+		return 0
+	}
+	return int64(*c.EstimatedMin) * 60
+}
+
+// Countdown は計測中の目標までの残り（「のこり 0:12:34」）または超過（「オーバー +0:01:23」）。
+// 計測中でない・目標が未設定なら空文字。表示は static/app.js が1秒ごとに更新する（同じ書式）。
+func (c cardView) Countdown() string {
+	if !c.Running() || c.EstimatedMin == nil || *c.EstimatedMin == 0 {
+		return ""
+	}
+	remain := c.EstimatedSec() - c.ActualSec
+	if remain > 0 {
+		return "のこり " + formatClock(remain)
+	}
+	return "オーバー +" + formatClock(-remain)
+}
+
 // ActualText は実績時間の表示（分単位）。
 func (c cardView) ActualText() string { return formatDuration(c.ActualSec) }
 

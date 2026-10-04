@@ -18,6 +18,8 @@
     <nav class="page-nav" aria-label="ページ">
       <a class="button" href="/"{{if eq . "board"}} aria-current="page"{{end}}>ボード</a>
       <a class="button" href="/reflections"{{if eq . "reflections"}} aria-current="page"{{end}}>ふりかえり</a>
+      {{/* 目標時間になったときの通知（ブラウザの通知・音）の ON / OFF。状態は app.js がブラウザに保存する */}}
+      <button type="button" class="button notify-toggle" id="notify-toggle" aria-pressed="true">つうち: ON</button>
     </nav>
   </header>
   <div id="flash" class="flash" role="alert" title="クリックで とじる" hidden></div>
