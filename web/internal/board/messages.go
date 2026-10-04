@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/kawafuchieirin/task-manager/web/internal/character"
 	"github.com/kawafuchieirin/task-manager/web/internal/taskclient"
 )
 
@@ -47,6 +48,8 @@ const (
 	msgDeleted      = "タスクを すてた。"
 	msgTimerStarted = "「%s」との たたかいが はじまった！"
 	msgTimerStopped = "「%s」との たたかいを おえた。"
+
+	msgLevelUp = "%sは レベル%dに あがった！"
 
 	msgReflectionSaved   = "ふりかえりを きろくした！ まなんだこと %dこ、 できなかったこと %dこ。"
 	msgReflectionFailed  = "ふりかえりは きろくしたが、 ちゅうしゅつに しっぱいした！ make status で insight が うごいているか たしかめてください。"
@@ -159,4 +162,21 @@ func conflictMessage(apiErr *taskclient.APIError) string {
 		return "けいそくちゅうの きろくは なおせない。 さきに ていし してください。"
 	}
 	return apiErr.Message
+}
+
+// moodText はキャラクターの様子を表す文言を返す。running は計測中のタスク（無ければ nil）。
+func moodText(mood character.Mood, running *taskclient.Task) string {
+	switch mood {
+	case character.MoodBattle:
+		if running != nil {
+			return fmt.Sprintf("「%s」と たたかっている！", running.Title)
+		}
+		return "たたかっている！"
+	case character.MoodSleep:
+		return "ねむっている… タスクを クリアすると めを さますかも。"
+	case character.MoodHappy:
+		return "ぜんぶ クリアして よろこんでいる！"
+	default:
+		return "がんばっている！"
+	}
 }

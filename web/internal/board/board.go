@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kawafuchieirin/task-manager/web/internal/character"
 	"github.com/kawafuchieirin/task-manager/web/internal/taskclient"
 )
 
@@ -107,6 +108,14 @@ type boardView struct {
 	// EstimatedMin / ActualSec はボード全体の目標時間（分）と実績時間（秒）の合計。
 	EstimatedMin int
 	ActualSec    int64
+	// Character はボードに表示するキャラクター（ピコ）の状態。
+	Character character.Status
+	// CharacterMood はキャラクターの様子を表す文言。
+	CharacterMood string
+	// Celebrate はタスクをクリアした直後（キャラクターがジャンプする）。
+	Celebrate bool
+	// LevelUp はこのクリアでレベルが上がったか。
+	LevelUp bool
 	// LoadError はボードを読み込めなかったとき（API 停止中など）に表示するメッセージ。
 	LoadError string
 	// Message は操作が成功したときにメッセージウィンドウに出す文言（htmx の out-of-band で差し替える）。
@@ -211,10 +220,11 @@ func (h *Handler) changeStatus(w http.ResponseWriter, r *http.Request) {
 		h.mutationError(w, r, err)
 		return
 	}
-	// クリアしたら、そのカードで振り返りを書けるようにパネルを開く。
+	// クリアしたら、そのカードで振り返りを書けるようにパネルを開き、キャラクターを喜ばせる。
 	view := boardView{}
 	if updated.Status == taskclient.StatusDone {
 		view = openReflect(updated)
+		view.Celebrate = taskclient.Status(r.FormValue("from")) != taskclient.StatusDone
 	}
 	// from は押したボタンが置かれていた列（メッセージの選び分けにだけ使う）。
 	if format := statusNotice(taskclient.Status(r.FormValue("from")), updated.Status); format != "" {
@@ -311,12 +321,26 @@ func (h *Handler) loadBoard(r *http.Request, view boardView) (boardView, error) 
 	}
 	view.Total = len(tasks)
 	view.Percent = progressPercent(view.Done, view.Total)
+
+	var running *taskclient.Task
+	for i := range tasks {
+		if tasks[i].RunningSince != nil {
+			running = &tasks[i]
+		}
+	}
+	view.Character = character.StatusFor(view.Done, view.Total, running != nil)
+	view.CharacterMood = moodText(view.Character.Mood, running)
+	view.LevelUp = view.Celebrate && view.Done > 0 && character.Level(view.Done) > character.Level(view.Done-1)
 	if view.noticeFormat != "" {
 		for _, t := range tasks {
 			if t.ID == view.noticeTaskID {
 				view.Message = fmt.Sprintf(view.noticeFormat, t.Title)
 			}
 		}
+	}
+	// クリアしてレベルが上がったら、メッセージに続けて知らせる。
+	if view.LevelUp {
+		view.Message = strings.TrimSpace(view.Message + " " + fmt.Sprintf(msgLevelUp, character.Name, view.Character.Level))
 	}
 	return view, nil
 }
