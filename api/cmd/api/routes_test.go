@@ -19,6 +19,9 @@ func newTestServer(t *testing.T, cfg config.Config) http.Handler {
 	if cfg.Addr == "" {
 		cfg.Addr = "127.0.0.1:8080"
 	}
+	if cfg.InsightURL == "" {
+		cfg.InsightURL = "http://127.0.0.1:1" // 接続できない先（抽出は失敗扱いになる）
+	}
 	h, err := newHandler(cfg, dbtest.New(t), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatalf("newHandler: %v", err)

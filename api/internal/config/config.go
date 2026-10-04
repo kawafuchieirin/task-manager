@@ -18,12 +18,15 @@ type Config struct {
 	// CORSOrigins はブラウザから API を直接呼べる他のアプリのオリジン（例: http://localhost:5173）。
 	// 画面アプリ（web）はサーバー間で呼ぶため、ここに登録する必要はない。
 	CORSOrigins []string
+	// InsightURL は振り返りの抽出を頼む insight サービスの URL。
+	InsightURL string
 }
 
 // 既定値はループバックのみで待ち受ける（ローカル専用アプリのため外部公開しない）。
 const (
-	defaultAddr   = "127.0.0.1:8080"
-	defaultDBPath = "data/taskboard.db"
+	defaultAddr       = "127.0.0.1:8080"
+	defaultDBPath     = "data/taskboard.db"
+	defaultInsightURL = "http://127.0.0.1:8081"
 
 	// minAPIKeyLen は推測されにくいキーを強制するための最小長。
 	minAPIKeyLen = 16
@@ -32,9 +35,10 @@ const (
 // Load は API サーバーの設定を読み込み、検証する。
 func Load(getenv envconf.Getenv) (Config, error) {
 	cfg := Config{
-		Addr:   envconf.ValueOr(getenv, "API_ADDR", defaultAddr),
-		DBPath: envconf.ValueOr(getenv, "API_DB_PATH", defaultDBPath),
-		APIKey: getenv("API_KEY"),
+		Addr:       envconf.ValueOr(getenv, "API_ADDR", defaultAddr),
+		DBPath:     envconf.ValueOr(getenv, "API_DB_PATH", defaultDBPath),
+		APIKey:     getenv("API_KEY"),
+		InsightURL: envconf.ValueOr(getenv, "API_INSIGHT_URL", defaultInsightURL),
 	}
 	if err := envconf.LoopbackAddr("API_ADDR", cfg.Addr); err != nil {
 		return Config{}, err
@@ -47,6 +51,9 @@ func Load(getenv envconf.Getenv) (Config, error) {
 		return Config{}, err
 	}
 	cfg.CORSOrigins = origins
+	if u, err := url.Parse(cfg.InsightURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil {
+		return Config{}, fmt.Errorf("API_INSIGHT_URL=%q は http(s)://host[:port] 形式で指定してください", cfg.InsightURL)
+	}
 	return cfg, nil
 }
 

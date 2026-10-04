@@ -20,10 +20,12 @@ type taskResponse struct {
 	UpdatedAt    time.Time   `json:"updated_at"`
 	ActualSec    int64       `json:"actual_sec"`
 	RunningSince *time.Time  `json:"running_since"`
+	// Reflection は振り返り。書いていなければ null。
+	Reflection *reflectionResponse `json:"reflection"`
 }
 
 func toTaskResponse(t task.Task) taskResponse {
-	return taskResponse{
+	resp := taskResponse{
 		ID:           t.ID,
 		Title:        t.Title,
 		Description:  t.Description,
@@ -35,6 +37,11 @@ func toTaskResponse(t task.Task) taskResponse {
 		ActualSec:    t.ActualSec,
 		RunningSince: t.RunningSince,
 	}
+	if t.Reflection != nil {
+		ref := toReflectionResponse(*t.Reflection)
+		resp.Reflection = &ref
+	}
+	return resp
 }
 
 type createTaskRequest struct {

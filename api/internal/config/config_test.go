@@ -19,13 +19,14 @@ func TestLoad(t *testing.T) {
 		{
 			name: "未設定なら既定値を使う",
 			env:  map[string]string{},
-			want: Config{Addr: "127.0.0.1:8080", DBPath: "data/taskboard.db"},
+			want: Config{Addr: "127.0.0.1:8080", DBPath: "data/taskboard.db", InsightURL: "http://127.0.0.1:8081"},
 		},
 		{
 			name: "環境変数で上書きできる",
-			env:  map[string]string{"API_ADDR": "localhost:9000", "API_DB_PATH": "/tmp/x.db"},
-			want: Config{Addr: "localhost:9000", DBPath: "/tmp/x.db"},
+			env:  map[string]string{"API_ADDR": "localhost:9000", "API_DB_PATH": "/tmp/x.db", "API_INSIGHT_URL": "http://localhost:9001"},
+			want: Config{Addr: "localhost:9000", DBPath: "/tmp/x.db", InsightURL: "http://localhost:9001"},
 		},
+		{name: "insight の URL にスキームなし", env: map[string]string{"API_INSIGHT_URL": "127.0.0.1:8081"}, wantErr: true},
 		// 詳細なアドレスの検証は shared/envconf のテストで行う
 		{name: "ループバック以外は拒否", env: map[string]string{"API_ADDR": "0.0.0.0:8080"}, wantErr: true},
 	}
@@ -41,7 +42,7 @@ func TestLoad(t *testing.T) {
 			if err != nil {
 				t.Fatalf("予期しないエラー: %v", err)
 			}
-			if got.Addr != tt.want.Addr || got.DBPath != tt.want.DBPath {
+			if got.Addr != tt.want.Addr || got.DBPath != tt.want.DBPath || got.InsightURL != tt.want.InsightURL {
 				t.Errorf("got %+v, want %+v", got, tt.want)
 			}
 		})
