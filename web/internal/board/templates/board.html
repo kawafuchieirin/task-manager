@@ -1,5 +1,24 @@
 {{define "board" -}}
 <section id="board" class="board" hx-target="this" hx-swap="outerHTML">
+  <div class="status-row">
+  {{with .Character -}}
+  <section class="character character--{{.Mood}}{{if $.Celebrate}} character--celebrate{{end}}{{if $.LevelUp}} character--levelup{{end}}"
+           aria-labelledby="character-name">
+    <h2 id="character-name" class="character__name">{{.Name}}</h2>
+    <div class="character__sprite" role="img" aria-label="{{.Name}}（{{.StageName}}）の ドットえ">
+      {{range $i, $f := .Frames}}<div class="character__frame character__frame--{{$i}}">{{$f}}</div>{{end}}
+      {{if eq .Mood "sleep"}}<span class="character__zzz" aria-hidden="true">Z</span>{{end}}
+      {{if eq .Mood "battle"}}<span class="character__bang" aria-hidden="true">！</span>{{end}}
+      {{if $.Celebrate}}<span class="character__sparkle" aria-hidden="true"></span>{{end}}
+    </div>
+    <dl class="character__stats">
+      <div><dt>Lv</dt><dd class="character__level">{{.Level}}</dd></div>
+      <div><dt>すがた</dt><dd>{{.StageName}}</dd></div>
+      <div><dt>つぎ</dt><dd>{{if .MaxLevel}}さいだい レベル！{{else}}あと {{.ToNext}}こ クリア{{end}}</dd></div>
+    </dl>
+    <p class="character__mood">{{$.CharacterMood}}</p>
+  </section>
+  {{- end}}
   <div class="progress">
     <div class="progress__label">
       <span>しんちょく</span>
@@ -10,6 +29,7 @@
       <div class="progress__fill" style="width: {{.Percent}}%"></div>
     </div>
     <p class="progress__time">もくひょう ごうけい {{minutes .EstimatedMin}} ／ じっせき ごうけい {{duration .ActualSec}}</p>
+  </div>
   </div>
 
   {{with .NewForm -}}
